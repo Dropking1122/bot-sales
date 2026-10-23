@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { apiRequest } from '../../lib/api';
 import { AutomotiveLogo } from '../ui/AutomotiveLogo';
+import { NotificationDropdown } from './NotificationDropdown';
 import {
   LayoutDashboard,
   Bike,
@@ -32,20 +33,30 @@ export const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [waStatus, setWaStatus] = useState<'CONNECTED' | 'QR_READY' | 'INITIALIZING' | 'DISCONNECTED'>('DISCONNECTED');
+  const [badgeCounts, setBadgeCounts] = useState<{ inbox?: number; leads?: number }>({});
 
   useEffect(() => {
-    async function checkWa() {
+    async function checkStatus() {
       try {
-        const res = await apiRequest('/whatsapp/status');
-        if (res.success && res.data) {
-          setWaStatus(res.data.status);
+        const [resWa, resSummary] = await Promise.all([
+          apiRequest('/whatsapp/status'),
+          apiRequest('/dashboard/summary')
+        ]);
+        if (resWa.success && resWa.data) {
+          setWaStatus(resWa.data.status);
+        }
+        if (resSummary.success && resSummary.data?.counts) {
+          setBadgeCounts({
+            inbox: resSummary.data.counts.totalConversations > 0 ? resSummary.data.counts.totalConversations : undefined,
+            leads: resSummary.data.counts.newLeads > 0 ? resSummary.data.counts.newLeads : undefined
+          });
         }
       } catch (e) {
         // ignore
       }
     }
-    checkWa();
-    const interval = setInterval(checkWa, 10000); // poll every 10s
+    checkStatus();
+    const interval = setInterval(checkStatus, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -53,8 +64,8 @@ export const AppLayout: React.FC = () => {
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
     { label: 'Katalog Motor', path: '/motorcycles', icon: Bike },
     { label: 'Kontak', path: '/contacts', icon: Users },
-    { label: 'Inbox Chat', path: '/inbox', icon: MessageSquare },
-    { label: 'Leads', path: '/leads', icon: TrendingUp },
+    { label: 'Inbox Chat', path: '/inbox', icon: MessageSquare, badge: badgeCounts.inbox },
+    { label: 'Leads', path: '/leads', icon: TrendingUp, badge: badgeCounts.leads },
     { label: 'Broadcast', path: '/broadcasts', icon: Radio },
     { label: 'Import Data', path: '/imports', icon: FileSpreadsheet },
     { label: 'Export Data', path: '/exports', icon: FileDown },
@@ -131,7 +142,12 @@ export const AppLayout: React.FC = () => {
                 }
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {item.badge && item.badge > 0 ? (
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    {item.badge}
+                  </span>
+                ) : null}
               </NavLink>
             );
           })}
@@ -198,7 +214,12 @@ export const AppLayout: React.FC = () => {
                 }
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {item.badge && item.badge > 0 ? (
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    {item.badge}
+                  </span>
+                ) : null}
               </NavLink>
             );
           })}
@@ -228,16 +249,17 @@ export const AppLayout: React.FC = () => {
             {renderWaBadge()}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <NotificationDropdown />
             <button
               onClick={toggleTheme}
               aria-label="Toggle Dark Mode"
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
             <div className="hidden sm:block text-right">
-              <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{user?.name}</p>
+              <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{user?.name}</p>
               <p className="text-[10px] text-slate-500">{user?.email}</p>
             </div>
           </div>

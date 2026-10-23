@@ -78,3 +78,108 @@ export async function getDashboardSummary(_req: Request, res: Response, next: Ne
     next(err);
   }
 }
+
+export async function getNotifications(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const [recentLeads, recentMessages, activeCampaigns] = await Promise.all([
+      prisma.lead.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          motorcycle: { select: { name: true } }
+        }
+      }),
+      prisma.message.findMany({
+        take: 5,
+        where: { senderType: 'CUSTOMER' },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          conversation: {
+            include: { contact: true }
+          }
+        }
+      }),
+      prisma.broadcastCampaign.findMany({
+        take: 3,
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
+    const notifications: Array<{
+      id: string;
+      title: string;
+      message: string;
+      type: 'lead' | 'message' | 'campaign' | 'system';
+      time: string;
+      link: string;
+      read: boolean;
+    }> = [];
+
+    // Map leads
+    recentLeads.forEach((lead) => {
+      notifications.push({
+        id: `lead-${lead.id}`,
+        title: `Lead ${lead.status}: ${lead.customerName || 'Prospek Baru'}`,
+        message: `Minat: ${lead.motorcycle?.name || 'Unit Motor'} • Kontak: ${lead.phone}`,
+        type: 'lead',
+        time: lead.createdAt.toISOString(),
+        link: '/leads',
+        read: lead.status !== 'BARU'
+      });
+    });
+
+    // Map messages
+    recentMessages.forEach((msg) => {
+      notifications.push({
+        id: `msg-${msg.id}`,
+        title: `Pesan: ${msg.conversation?.contact?.name || msg.conversation?.contact?.phone || 'Konsumen'}`,
+        message: msg.content.length > 55 ? msg.content.substring(0, 55) + '...' : msg.content,
+        type: 'message',
+        time: msg.createdAt.toISOString(),
+        link: '/inbox',
+        read: msg.status === 'READ'
+      });
+    });
+
+    // Map campaigns
+    activeCampaigns.forEach((camp) => {
+      notifications.push({
+        id: `camp-${camp.id}`,
+        title: `Broadcast: ${camp.name}`,
+        message: `Status: ${camp.status} (${camp.sentCount}/${camp.totalTarget} terkirim)`,
+        type: 'campaign',
+        time: camp.createdAt.toISOString(),
+        link: '/broadcasts',
+        read: true
+      });
+    });
+
+    // Fallback system notification if empty
+    if (notifications.length === 0) {
+      notifications.push({
+        id: 'sys-online',
+        title: 'Sistem DMS Aktif',
+        message: 'Koneksi database & WhatsApp gateway siap beroperasi.',
+        type: 'system',
+        time: new Date().toISOString(),
+        link: '/settings',
+        read: false
+      });
+    }
+
+    notifications.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+    const unreadCount = notifications.filter((n) => !n.read).length;
+
+    return res.json({
+      success: true,
+      data: {
+        unreadCount,
+        notifications
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
