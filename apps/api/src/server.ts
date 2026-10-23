@@ -30,9 +30,19 @@ import { startBroadcastWorker } from './jobs/broadcastWorker';
 const app = express();
 
 // Security and middleware
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
-}));
+app.use((_req, res, next) => {
+  // Clear any cached HSTS in clients from earlier misconfiguration
+  res.setHeader('Strict-Transport-Security', 'max-age=0');
+  next();
+});
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: false
+  })
+);
 
 app.use(cors({
   origin: true,
