@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import fs from 'fs';
 import { config } from './config/env';
 import { logger } from './config/logger';
 import { prisma } from './config/db';
@@ -69,6 +70,18 @@ app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/audit-logs', auditLogsRouter);
+
+// Serve frontend static build if available
+const webDistPath = path.resolve(__dirname, '../../web/dist');
+if (fs.existsSync(webDistPath)) {
+  app.use(express.static(webDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/storage') || req.path === '/health') {
+      return next();
+    }
+    res.sendFile(path.join(webDistPath, 'index.html'));
+  });
+}
 
 // Centralized error handler
 app.use(errorHandler);
