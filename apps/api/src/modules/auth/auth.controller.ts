@@ -54,6 +54,49 @@ export async function login(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export async function passkeyLogin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { passkey } = req.body;
+    const serverPasskey = process.env.ADMIN_PASSKEY || 'DMS-SECURE-2026-X7R9';
+
+    if (!passkey || String(passkey).trim() !== serverPasskey.trim()) {
+      return res.status(401).json({ success: false, message: 'Kunci otorisasi tidak valid' });
+    }
+
+    const admin = await prisma.admin.findFirst({
+      where: { role: 'SUPER_ADMIN', isActive: true }
+    });
+
+    if (!admin) {
+      return res.status(500).json({ success: false, message: 'Akun administrator belum terdaftar' });
+    }
+
+    const token = jwt.sign(
+      { id: admin.id, email: admin.email, role: admin.role },
+      config.jwt.secret,
+      { expiresIn: '7d' }
+    );
+
+    await logAudit(req, 'PASSKEY_AUTH', 'Admin', admin.id, { type: 'DIRECT_PASSKEY' });
+
+    return res.json({
+      success: true,
+      message: 'Otorisasi konsol berhasil',
+      data: {
+        token,
+        user: {
+          id: admin.id,
+          name: admin.name,
+          email: admin.email,
+          role: admin.role
+        }
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function me(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.user) {

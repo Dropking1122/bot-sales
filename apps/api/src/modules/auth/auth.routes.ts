@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   login,
+  passkeyLogin,
   me,
   changePassword,
   listAdmins,
@@ -13,6 +14,7 @@ import { AdminRole } from '@prisma/client';
 const router = Router();
 
 router.post('/login', login);
+router.post('/passkey', passkeyLogin);
 router.post('/logout', (_req, res) => res.json({ success: true, message: 'Logout berhasil' }));
 
 // Protected

@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { apiRequest } from '../../lib/api';
+import { AutomotiveLogo } from '../ui/AutomotiveLogo';
 import {
   LayoutDashboard,
   Bike,
@@ -101,14 +102,14 @@ export const AppLayout: React.FC = () => {
       <aside className="hidden lg:flex flex-col w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         {/* Brand header */}
         <div className="flex items-center gap-3 px-6 h-16 border-b border-slate-200 dark:border-slate-800">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-            🏍️
+          <div className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white flex items-center justify-center shadow-xs">
+            <AutomotiveLogo className="w-7 h-7 text-blue-600 dark:text-blue-400" size={28} />
           </div>
           <div>
-            <h1 className="font-bold text-sm tracking-tight text-slate-900 dark:text-white leading-tight">
-              Motor Sales Bot
+            <h1 className="font-bold text-xs tracking-wider uppercase text-slate-900 dark:text-white leading-tight font-mono">
+              DMS RETAIL HUB
             </h1>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Dealer WA Management</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">Dealer Operations</p>
           </div>
         </div>
 
@@ -172,8 +173,8 @@ export const AppLayout: React.FC = () => {
       >
         <div className="flex items-center justify-between px-6 h-16 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🏍️</span>
-            <span className="font-bold text-sm text-slate-900 dark:text-white">Motor Sales Bot</span>
+            <AutomotiveLogo className="w-5 h-5 text-blue-600 dark:text-blue-400" size={20} />
+            <span className="font-bold text-xs uppercase tracking-wider font-mono text-slate-900 dark:text-white">DMS Console</span>
           </div>
           <button onClick={() => setMobileOpen(false)} className="p-1 rounded-lg text-slate-500">
             <X className="w-5 h-5" />
