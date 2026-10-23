@@ -93,15 +93,37 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/audit-logs', auditLogsRouter);
 
-// Serve frontend static build if available
+// Serve frontend static build if available (disable index: false so app.get('*') injects dynamic DB title)
 const webDistPath = path.resolve(__dirname, '../../web/dist');
 if (fs.existsSync(webDistPath)) {
-  app.use(express.static(webDistPath));
-  app.get('*', (req, res, next) => {
+  app.use(express.static(webDistPath, { index: false }));
+  app.get('*', async (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/storage') || req.path === '/health') {
       return next();
     }
-    res.sendFile(path.join(webDistPath, 'index.html'));
+
+    try {
+      const indexPath = path.join(webDistPath, 'index.html');
+      let html = fs.readFileSync(indexPath, 'utf-8');
+
+      const titleSetting = await prisma.botSetting.findUnique({ where: { key: 'web_title' } });
+      const descSetting = await prisma.botSetting.findUnique({ where: { key: 'web_meta_description' } });
+
+      if (titleSetting?.value) {
+        html = html.replace(/<title>.*?<\/title>/, `<title>${titleSetting.value}</title>`);
+      }
+      if (descSetting?.value) {
+        html = html.replace(
+          /<meta name="description".*?>/,
+          `<meta name="description" content="${descSetting.value}">`
+        );
+      }
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    } catch {
+      res.sendFile(path.join(webDistPath, 'index.html'));
+    }
   });
 }
 

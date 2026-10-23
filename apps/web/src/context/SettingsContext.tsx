@@ -98,6 +98,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     fetchPublicSettings();
   }, []);
 
+  useEffect(() => {
+    applyDomUpdates(settings);
+  }, [settings.web_title, settings.web_meta_description, settings.web_meta_keywords, settings.web_favicon_url]);
+
   const updateSettingsState = (partial: Partial<WebSettings>) => {
     setSettings((prev) => {
       const updated: WebSettings = {

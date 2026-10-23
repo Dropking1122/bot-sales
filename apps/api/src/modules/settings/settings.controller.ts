@@ -75,27 +75,31 @@ export async function updateSettings(req: Request, res: Response, next: NextFunc
   try {
     let settingList: Array<{ key: string; value: any; description?: string }> = [];
 
-    if (Array.isArray(req.body.settings)) {
-      settingList = req.body.settings;
-    } else if (req.body && typeof req.body === 'object') {
-      settingList = Object.entries(req.body).map(([key, value]) => ({
+    // Safely support { settings: [...] }, { settings: { k: v } }, [...], or { k: v }
+    const sourceData = req.body && req.body.settings !== undefined ? req.body.settings : req.body;
+
+    if (Array.isArray(sourceData)) {
+      settingList = sourceData;
+    } else if (sourceData && typeof sourceData === 'object') {
+      settingList = Object.entries(sourceData).map(([key, value]) => ({
         key,
-        value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+        value: typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')
       }));
     }
+
+    // Filter out invalid keys or redundant wrapper key
+    settingList = settingList.filter((s) => s.key && s.key !== 'settings');
 
     if (settingList.length === 0) {
       return res.status(400).json({ success: false, message: 'Data pengaturan tidak boleh kosong' });
     }
 
     for (const s of settingList) {
-      if (s.key) {
-        await prisma.botSetting.upsert({
-          where: { key: s.key },
-          update: { value: String(s.value ?? '') },
-          create: { key: s.key, value: String(s.value ?? ''), description: s.description || null }
-        });
-      }
+      await prisma.botSetting.upsert({
+        where: { key: s.key },
+        update: { value: String(s.value ?? '') },
+        create: { key: s.key, value: String(s.value ?? ''), description: s.description || null }
+      });
     }
 
     await logAudit(req, 'UPDATE_SETTINGS', 'BotSetting', null, { keys: settingList.map((s) => s.key) });
