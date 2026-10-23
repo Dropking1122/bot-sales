@@ -1,0 +1,474 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  SALES
+}
+
+enum MotorcycleCondition {
+  BARU
+  BEKAS
+}
+
+enum StockStatus {
+  TERSEDIA
+  INDENT
+  HABIS
+}
+
+enum ConsentStatus {
+  GRANTED
+  PENDING
+  DENIED
+  OPT_OUT
+}
+
+enum BroadcastStatus {
+  DRAFT
+  PENDING_APPROVAL
+  SCHEDULED
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum RecipientStatus {
+  PENDING
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
+enum LeadStatus {
+  BARU
+  DIHUBUNGI
+  TERTARIK
+  NEGOSIASI
+  MENUNGGU_KEPUTUSAN
+  BERHASIL
+  TIDAK_BERHASIL
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum WhatsAppSessionStatus {
+  DISCONNECTED
+  INITIALIZING
+  QR_READY
+  AUTHENTICATED
+  CONNECTED
+  AUTH_FAILURE
+}
+
+model Admin {
+  id           String      @id @default(uuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  role         AdminRole   @default(ADMIN)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  assignedConversations Conversation[]
+  assignedLeads         Lead[]
+  broadcastCampaigns    BroadcastCampaign[]
+  broadcastTemplates    BroadcastTemplate[]
+  importJobs            ImportJob[]
+  exportJobs            ExportJob[]
+  auditLogs             AuditLog[]
+
+  @@map("admins")
+}
+
+model Brand {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  description String?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  motorcycles Motorcycle[]
+
+  @@map("brands")
+}
+
+model Motorcycle {
+  id              String              @id @default(uuid())
+  sku             String              @unique
+  name            String
+  brandId         String
+  model           String
+  year            Int
+  category        String
+  condition       MotorcycleCondition @default(BARU)
+  priceOtr        Decimal             @db.Decimal(14, 2)
+  description     String?             @db.Text
+  specs           Json?
+  colors          String[]            @default([])
+  stockStatus     StockStatus         @default(TERSEDIA)
+  isActive        Boolean             @default(true)
+  minDp           Decimal?            @db.Decimal(14, 2)
+  availableTenors Int[]               @default([11, 23, 29, 35])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  brand              Brand               @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  images             MotorcycleImage[]
+  financingPlans     FinancingPlan[]
+  leads              Lead[]
+  broadcastCampaigns BroadcastCampaign[]
+
+  @@index([sku])
+  @@index([brandId])
+  @@index([name])
+  @@index([category])
+  @@index([priceOtr])
+  @@map("motorcycles")
+}
+
+model MotorcycleImage {
+  id           String     @id @default(uuid())
+  motorcycleId String
+  url          String
+  isPrimary    Boolean    @default(false)
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  motorcycle   Motorcycle @relation(fields: [motorcycleId], references: [id], onDelete: Cascade)
+
+  @@index([motorcycleId])
+  @@map("motorcycle_images")
+}
+
+model FinancingPlan {
+  id           String     @id @default(uuid())
+  motorcycleId String
+  name         String
+  dpMin        Decimal    @db.Decimal(14, 2)
+  dpMax        Decimal?   @db.Decimal(14, 2)
+  tenorMonths  Int
+  interestRate Decimal    @db.Decimal(5, 2) // annual interest %
+  adminFee     Decimal    @default(500000) @db.Decimal(12, 2)
+  insuranceFee Decimal    @default(350000) @db.Decimal(12, 2)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  motorcycle   Motorcycle @relation(fields: [motorcycleId], references: [id], onDelete: Cascade)
+
+  @@index([motorcycleId])
+  @@map("financing_plans")
+}
+
+model Contact {
+  id                   String        @id @default(uuid())
+  name                 String
+  phone                String
+  phoneNormalized      String        @unique
+  email                String?
+  source               String        @default("DIRECT")
+  interestedMotorcycle String?
+  internalNotes        String?       @db.Text
+  consentStatus        ConsentStatus @default(PENDING)
+  consentSource        String?
+  consentAt            DateTime?
+  isOptOut             Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  contactTags          ContactTag[]
+  customers            Customer[]
+  conversations        Conversation[]
+  leads                Lead[]
+  broadcastRecipients  BroadcastRecipient[]
+
+  @@index([phoneNormalized])
+  @@index([name])
+  @@index([consentStatus])
+  @@index([isOptOut])
+  @@map("contacts")
+}
+
+model Tag {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  color       String       @default("#3B82F6")
+  createdAt   DateTime     @default(now())
+
+  contactTags ContactTag[]
+
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  contactId String?
+  name      String
+  phone     String
+  nik       String?  @unique
+  address   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([phone])
+  @@map("customers")
+}
+
+model Conversation {
+  id                String    @id @default(uuid())
+  contactId         String
+  status            String    @default("ACTIVE") // ACTIVE, CLOSED, HANDOFF
+  isBotActive       Boolean   @default(true)
+  lastMessageAt     DateTime  @default(now())
+  assignedToAdminId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  contact           Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedAdmin     Admin?    @relation(fields: [assignedToAdminId], references: [id], onDelete: SetNull)
+  messages          Message[]
+
+  @@index([contactId])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  senderType     String       // BOT, CUSTOMER, SALES, SYSTEM
+  content        String       @db.Text
+  mediaUrl       String?
+  mediaType      String?
+  waMessageId    String?      @unique
+  status         String       @default("DELIVERED")
+  createdAt      DateTime     @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model Lead {
+  id              String     @id @default(uuid())
+  contactId       String
+  motorcycleId    String?
+  customerName    String
+  phone           String
+  budget          Decimal?   @db.Decimal(14, 2)
+  dpPlanned       Decimal?   @db.Decimal(14, 2)
+  tenorPlanned    Int?
+  status          LeadStatus @default(BARU)
+  assignedSalesId String?
+  notes           String?    @db.Text
+  followUpDate    DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  contact         Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  motorcycle      Motorcycle? @relation(fields: [motorcycleId], references: [id], onDelete: SetNull)
+  assignedSales   Admin?      @relation(fields: [assignedSalesId], references: [id], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([status])
+  @@index([assignedSalesId])
+  @@map("leads")
+}
+
+model BroadcastCampaign {
+  id              String            @id @default(uuid())
+  name            String
+  description     String?
+  campaignType    String
+  status          BroadcastStatus   @default(DRAFT)
+  messageTemplate String            @db.Text
+  mediaUrl        String?
+  motorcycleId    String?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  totalTarget     Int               @default(0)
+  sentCount       Int               @default(0)
+  failedCount     Int               @default(0)
+  skippedCount    Int               @default(0)
+  createdById     String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  createdBy       Admin             @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  motorcycle      Motorcycle?       @relation(fields: [motorcycleId], references: [id], onDelete: SetNull)
+  recipients      BroadcastRecipient[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("broadcast_campaigns")
+}
+
+model BroadcastRecipient {
+  id                  String          @id @default(uuid())
+  campaignId          String
+  contactId           String
+  phone               String
+  status              RecipientStatus @default(PENDING)
+  personalizedMessage String?         @db.Text
+  queuedAt            DateTime?
+  sentAt              DateTime?
+  failedAt            DateTime?
+  errorMessage        String?
+  retryCount          Int             @default(0)
+  idempotencyKey      String          @unique
+
+  campaign            BroadcastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact             Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([status])
+  @@map("broadcast_recipients")
+}
+
+model BroadcastTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  category    String
+  content     String   @db.Text
+  variables   String[] @default([])
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   Admin    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@map("broadcast_templates")
+}
+
+model ImportJob {
+  id             String         @id @default(uuid())
+  jobType        String         // MOTORCYCLE, CONTACT
+  filename       String
+  originalName   String
+  status         ImportStatus   @default(PENDING)
+  totalRows      Int            @default(0)
+  processedRows  Int            @default(0)
+  successCount   Int            @default(0)
+  updatedCount   Int            @default(0)
+  skippedCount   Int            @default(0)
+  failedCount    Int            @default(0)
+  createdById    String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  createdBy      Admin          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  errors         ImportJobError[]
+
+  @@index([status])
+  @@map("import_jobs")
+}
+
+model ImportJobError {
+  id           String    @id @default(uuid())
+  importJobId  String
+  rowNumber    Int
+  rowSku       String?
+  columnName   String?
+  errorMessage String
+  rawData      Json?
+  createdAt    DateTime  @default(now())
+
+  importJob    ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@index([importJobId])
+  @@map("import_job_errors")
+}
+
+model ExportJob {
+  id           String    @id @default(uuid())
+  jobType      String    // MOTORCYCLES, CONTACTS, LEADS, CAMPAIGN_REPORT
+  status       String    @default("PENDING") // PENDING, READY, FAILED
+  filterParams Json?
+  downloadUrl  String?
+  expiresAt    DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  createdBy    Admin     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@map("export_jobs")
+}
+
+model BotSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("bot_settings")
+}
+
+model WhatsAppSession {
+  id              String                @id @default(uuid())
+  sessionName     String                @unique
+  status          WhatsAppSessionStatus @default(DISCONNECTED)
+  qrCode          String?               @db.Text
+  lastConnectedAt DateTime?
+  updatedAt       DateTime              @updatedAt
+
+  @@map("whatsapp_sessions")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  adminId   String?
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  admin     Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

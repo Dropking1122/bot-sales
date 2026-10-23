@@ -1,0 +1,21 @@
+{
+  "name": "motor-sales-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Motor Sales WhatsApp Bot, Broadcast, Import Excel & Admin Dashboard",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces --if-present build",
+    "dev:api": "npm run --workspace=@bot-sales/api dev",
+    "dev:web": "npm run --workspace=@bot-sales/web dev",
+    "start:api": "npm run --workspace=@bot-sales/api start",
+    "test": "npm run --workspaces --if-present test",
+    "typecheck": "npm run --workspaces --if-present typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
