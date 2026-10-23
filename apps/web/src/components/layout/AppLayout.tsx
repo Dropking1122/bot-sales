@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
 import { apiRequest } from '../../lib/api';
 import { AutomotiveLogo } from '../ui/AutomotiveLogo';
 import { NotificationDropdown } from './NotificationDropdown';
@@ -30,6 +31,7 @@ import {
 export const AppLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [waStatus, setWaStatus] = useState<'CONNECTED' | 'QR_READY' | 'INITIALIZING' | 'DISCONNECTED'>('DISCONNECTED');
@@ -70,7 +72,7 @@ export const AppLayout: React.FC = () => {
     { label: 'Import Data', path: '/imports', icon: FileSpreadsheet },
     { label: 'Export Data', path: '/exports', icon: FileDown },
     { label: 'Laporan', path: '/reports', icon: BarChart3 },
-    { label: 'Pengaturan & WA', path: '/settings', icon: Settings },
+    { label: 'Pengaturan', path: '/settings', icon: Settings },
     { label: 'Audit Log', path: '/audit-logs', icon: History }
   ];
 
@@ -113,14 +115,20 @@ export const AppLayout: React.FC = () => {
       <aside className="hidden lg:flex flex-col w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         {/* Brand header */}
         <div className="flex items-center gap-3 px-6 h-16 border-b border-slate-200 dark:border-slate-800">
-          <div className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white flex items-center justify-center shadow-xs">
-            <AutomotiveLogo className="w-7 h-7 text-blue-600 dark:text-blue-400" size={28} />
+          <div className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white flex items-center justify-center shadow-xs overflow-hidden">
+            {settings.web_logo_url ? (
+              <img src={settings.web_logo_url} alt="Logo" className="w-7 h-7 object-contain" />
+            ) : (
+              <AutomotiveLogo className="w-7 h-7 text-blue-600 dark:text-blue-400" size={28} />
+            )}
           </div>
-          <div>
-            <h1 className="font-bold text-xs tracking-wider uppercase text-slate-900 dark:text-white leading-tight font-mono">
-              DMS RETAIL HUB
+          <div className="min-w-0 flex-1">
+            <h1 className="font-bold text-xs tracking-wider uppercase text-slate-900 dark:text-white leading-tight font-mono truncate">
+              {settings.web_brand_name || 'REVDSTORE'}
             </h1>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400">Dealer Operations</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+              {settings.web_brand_sub || 'Dealer Retail Console'}
+            </p>
           </div>
         </div>
 
@@ -188,9 +196,15 @@ export const AppLayout: React.FC = () => {
         }`}
       >
         <div className="flex items-center justify-between px-6 h-16 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <AutomotiveLogo className="w-5 h-5 text-blue-600 dark:text-blue-400" size={20} />
-            <span className="font-bold text-xs uppercase tracking-wider font-mono text-slate-900 dark:text-white">DMS Console</span>
+          <div className="flex items-center gap-2 overflow-hidden">
+            {settings.web_logo_url ? (
+              <img src={settings.web_logo_url} alt="Logo" className="w-5 h-5 object-contain" />
+            ) : (
+              <AutomotiveLogo className="w-5 h-5 text-blue-600 dark:text-blue-400" size={20} />
+            )}
+            <span className="font-bold text-xs uppercase tracking-wider font-mono text-slate-900 dark:text-white truncate">
+              {settings.web_brand_name || 'REVDSTORE'}
+            </span>
           </div>
           <button onClick={() => setMobileOpen(false)} className="p-1 rounded-lg text-slate-500">
             <X className="w-5 h-5" />
@@ -238,7 +252,7 @@ export const AppLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Navbar */}
-        <header className="h-16 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-4 sm:px-6 flex items-center justify-between">
+        <header className="relative z-40 h-16 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-4 sm:px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileOpen(true)}
@@ -273,11 +287,13 @@ export const AppLayout: React.FC = () => {
           <footer className="mt-10 pt-4 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
             <div className="flex items-center gap-1.5 font-medium">
               <span>© {new Date().getFullYear()}</span>
-              <span className="font-bold text-slate-900 dark:text-white tracking-wide">REVDSTORE</span>
+              <span className="font-bold text-slate-900 dark:text-white tracking-wide">
+                {settings.web_footer_copyright || 'REVDSTORE'}
+              </span>
               <span>• All rights reserved.</span>
             </div>
             <div className="text-[11px] text-slate-400 font-medium">
-              Dealer Management System & Automotive Retail Hub
+              {settings.web_brand_sub || 'Dealer Management System & Automotive Retail Hub'}
             </div>
           </footer>
         </main>

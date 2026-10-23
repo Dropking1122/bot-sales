@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { SettingsProvider } from './context/SettingsContext';
 import { AppLayout } from './components/layout/AppLayout';
 
 import { LoginPage } from './pages/LoginPage';
@@ -41,34 +42,36 @@ export const App: React.FC = () => {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
+        <SettingsProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
 
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DashboardPage />} />
-              <Route path="motorcycles" element={<MotorcyclesPage />} />
-              <Route path="contacts" element={<ContactsPage />} />
-              <Route path="inbox" element={<InboxPage />} />
-              <Route path="leads" element={<LeadsPage />} />
-              <Route path="broadcasts" element={<BroadcastsPage />} />
-              <Route path="imports" element={<ImportPage />} />
-              <Route path="exports" element={<ExportPage />} />
-              <Route path="reports" element={<ReportsPage />} />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="audit-logs" element={<AuditLogsPage />} />
-            </Route>
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<DashboardPage />} />
+                <Route path="motorcycles" element={<MotorcyclesPage />} />
+                <Route path="contacts" element={<ContactsPage />} />
+                <Route path="inbox" element={<InboxPage />} />
+                <Route path="leads" element={<LeadsPage />} />
+                <Route path="broadcasts" element={<BroadcastsPage />} />
+                <Route path="imports" element={<ImportPage />} />
+                <Route path="exports" element={<ExportPage />} />
+                <Route path="reports" element={<ReportsPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="audit-logs" element={<AuditLogsPage />} />
+              </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </SettingsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

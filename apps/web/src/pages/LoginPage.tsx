@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import { apiRequest } from '../lib/api';
 import { AutomotiveLogo } from '../components/ui/AutomotiveLogo';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
@@ -11,6 +12,7 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,15 +49,19 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl p-8 space-y-6 relative z-10">
         {/* Professional Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-slate-800 border border-slate-700/80 shadow-xs">
-            <AutomotiveLogo className="w-9 h-9 text-blue-500" size={36} />
+          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-slate-800 border border-slate-700/80 shadow-xs overflow-hidden">
+            {settings.web_logo_url ? (
+              <img src={settings.web_logo_url} alt="Logo" className="w-9 h-9 object-contain" />
+            ) : (
+              <AutomotiveLogo className="w-9 h-9 text-blue-500" size={36} />
+            )}
           </div>
           <div>
             <h1 className="text-base font-bold tracking-wider text-white uppercase font-mono">
-              DMS RETAIL CONSOLE
+              {settings.web_brand_name || 'REVDSTORE'}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              Sistem Operasional & Manajemen Dealer
+              {settings.web_brand_sub || 'Sistem Operasional & Manajemen Dealer'}
             </p>
           </div>
         </div>
@@ -117,7 +123,7 @@ export const LoginPage: React.FC = () => {
         </form>
 
         <div className="pt-3 border-t border-slate-800 text-center text-[10px] text-slate-400 font-medium">
-          © {new Date().getFullYear()} <span className="text-slate-300 font-bold">REVDSTORE</span> • DEALER MANAGEMENT SYSTEM
+          © {new Date().getFullYear()} <span className="text-slate-300 font-bold">{settings.web_footer_copyright || 'REVDSTORE'}</span> • DEALER MANAGEMENT SYSTEM
         </div>
       </div>
     </div>
