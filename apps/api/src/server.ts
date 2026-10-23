@@ -45,16 +45,27 @@ app.use(
   })
 );
 
+const allowedOrigins = [
+  'http://localhost:8090',
+  'http://127.0.0.1:8090',
+  'http://38.47.85.35:8090'
+];
+
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || origin.includes('38.47.85.35') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS policy: Access denied from this origin'), false);
+  },
   credentials: true
 }));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static files for uploaded images & media
-app.use('/storage', express.static(path.resolve(__dirname, '../../storage')));
+// Static files ONLY for uploaded images & media (protects whatsapp-session and exports from public access)
+app.use('/storage/uploads', express.static(config.storage.uploadsDir));
 
 // Health check
 app.get('/health', (_req, res) => {

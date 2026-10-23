@@ -439,6 +439,23 @@ export async function executeContactImport(req: Request, res: Response, next: Ne
     });
     const existingPhoneMap = new Map(existingContacts.map((c) => [c.phoneNormalized, c.id]));
 
+    // Pre-load tags map to prevent N+1 queries in the row loop
+    const existingTags = await prisma.tag.findMany({ select: { id: true, name: true } });
+    const tagMap = new Map<string, string>(existingTags.map((t) => [t.name.toLowerCase(), t.id]));
+
+    const getOrCreateTagId = async (tagName: string, tx: any): Promise<string> => {
+      const key = tagName.toLowerCase();
+      const cached = tagMap.get(key);
+      if (cached) return cached;
+      const tag = await tx.tag.upsert({
+        where: { name: tagName },
+        update: {},
+        create: { name: tagName }
+      });
+      tagMap.set(key, tag.id);
+      return tag.id;
+    };
+
     for (let i = 0; i < rawRows.length; i++) {
       const raw = rawRows[i];
       const rowNum = i + 2;
@@ -492,15 +509,11 @@ export async function executeContactImport(req: Request, res: Response, next: Ne
             if (val.tag) {
               const tagNames = val.tag.split(',').map((t) => t.trim()).filter(Boolean);
               for (const tagName of tagNames) {
-                const tag = await tx.tag.upsert({
-                  where: { name: tagName },
-                  update: {},
-                  create: { name: tagName }
-                });
+                const tagId = await getOrCreateTagId(tagName, tx);
                 await tx.contactTag.upsert({
-                  where: { contactId_tagId: { contactId: existingId, tagId: tag.id } },
+                  where: { contactId_tagId: { contactId: existingId, tagId } },
                   update: {},
-                  create: { contactId: existingId, tagId: tag.id }
+                  create: { contactId: existingId, tagId }
                 });
               }
             }
@@ -532,13 +545,9 @@ export async function executeContactImport(req: Request, res: Response, next: Ne
             if (val.tag) {
               const tagNames = val.tag.split(',').map((t) => t.trim()).filter(Boolean);
               for (const tagName of tagNames) {
-                const tag = await tx.tag.upsert({
-                  where: { name: tagName },
-                  update: {},
-                  create: { name: tagName }
-                });
+                const tagId = await getOrCreateTagId(tagName, tx);
                 await tx.contactTag.create({
-                  data: { contactId: created.id, tagId: tag.id }
+                  data: { contactId: created.id, tagId }
                 });
               }
             }

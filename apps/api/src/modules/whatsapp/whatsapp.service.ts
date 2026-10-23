@@ -155,9 +155,18 @@ class WhatsAppManager {
       });
 
       if (!contact) {
+        let contactPushName: string | null = null;
+        try {
+          const detail = await msg.getContact();
+          contactPushName = detail?.pushname || detail?.name || null;
+        } catch (e) {
+          // ignore
+        }
+        const resolvedName = contactPushName || (msg as any)._data?.notifyName || (msg as any).notifyName || msg.author || rawPhone;
+
         contact = await prisma.contact.create({
           data: {
-            name: msg.author || rawPhone,
+            name: resolvedName,
             phone: rawPhone,
             phoneNormalized: normalizedPhone,
             source: 'WHATSAPP_BOT',

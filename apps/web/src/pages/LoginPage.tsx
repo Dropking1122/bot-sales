@@ -116,8 +116,8 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        <div className="pt-2 border-t border-slate-800 text-center text-[10px] text-slate-400 font-mono">
-          DEALER MANAGEMENT SYSTEM • SECURE ACCESS
+        <div className="pt-3 border-t border-slate-800 text-center text-[10px] text-slate-400 font-medium">
+          © {new Date().getFullYear()} <span className="text-slate-300 font-bold">REVDSTORE</span> • DEALER MANAGEMENT SYSTEM
         </div>
       </div>
     </div>

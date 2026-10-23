@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import {
   login,
   passkeyLogin,
@@ -13,8 +14,20 @@ import { AdminRole } from '@prisma/client';
 
 const router = Router();
 
-router.post('/login', login);
-router.post('/passkey', passkeyLogin);
+// Rate limiter for authentication attempts (anti brute-force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 15, // maksimal 15 percobaan per 15 menit per IP
+  message: {
+    success: false,
+    message: 'Terlalu banyak percobaan autentikasi. Silakan tunggu 15 menit sebelum mencoba kembali.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+router.post('/login', authLimiter, login);
+router.post('/passkey', authLimiter, passkeyLogin);
 router.post('/logout', (_req, res) => res.json({ success: true, message: 'Logout berhasil' }));
 
 // Protected
