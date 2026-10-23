@@ -16,16 +16,26 @@ class WhatsAppManager {
     // Session state
   }
 
-  public getStatus(): { status: WhatsAppStatus; qrCode: string | null } {
+  public getStatus(): { status: WhatsAppStatus; qrCode: string | null; qrImage: string | null } {
     return {
       status: this.status,
-      qrCode: this.qrCodeDataUrl
+      qrCode: this.qrCodeDataUrl,
+      qrImage: this.qrCodeDataUrl
     };
   }
 
   public async initialize(): Promise<void> {
     if (this.isInitializing || this.status === 'CONNECTED') {
       return;
+    }
+
+    if (this.client) {
+      try {
+        await this.client.destroy();
+      } catch (e) {
+        // ignore
+      }
+      this.client = null;
     }
 
     this.isInitializing = true;
@@ -67,6 +77,7 @@ class WhatsAppManager {
 
     this.client.on('qr', async (qr) => {
       this.status = 'QR_READY';
+      this.isInitializing = false;
       this.qrCodeDataUrl = await qrcode.toDataURL(qr);
       logger.info('WhatsApp QR Code generated');
       this.updateDbStatus('QR_READY', this.qrCodeDataUrl);
@@ -358,10 +369,15 @@ class WhatsAppManager {
 
   public async disconnect(): Promise<void> {
     if (this.client) {
-      await this.client.destroy();
+      try {
+        await this.client.destroy();
+      } catch (e) {
+        // ignore
+      }
       this.client = null;
     }
     this.status = 'DISCONNECTED';
+    this.isInitializing = false;
     this.qrCodeDataUrl = null;
     await this.updateDbStatus('DISCONNECTED');
   }

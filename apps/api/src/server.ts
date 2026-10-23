@@ -21,6 +21,7 @@ import { broadcastsRouter } from './modules/broadcasts/broadcast.routes';
 import { conversationsRouter } from './modules/conversations/conversations.routes';
 import { leadsRouter } from './modules/leads/leads.routes';
 import { whatsappRouter } from './modules/whatsapp/whatsapp.routes';
+import { waManager } from './modules/whatsapp/whatsapp.service';
 import { settingsRouter } from './modules/settings/settings.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
 import { auditLogsRouter } from './modules/audit-logs/audit-logs.routes';
@@ -101,11 +102,20 @@ const server = app.listen(config.port, () => {
   logger.info(`🚀 API Server running on port ${config.port} in ${config.env} mode`);
   // Start background worker for broadcasts
   startBroadcastWorker();
+  // Auto-initialize WhatsApp client so QR is ready for admin
+  waManager.initialize().catch((err) => {
+    logger.warn({ err }, 'WhatsApp initial auto-start encountered issue');
+  });
 });
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {
   logger.info(`Received ${signal}. Shutting down gracefully...`);
+  try {
+    await waManager.disconnect();
+  } catch (e) {
+    // ignore
+  }
   server.close(async () => {
     await prisma.$disconnect();
     logger.info('Closed out remaining connections. Process terminating.');

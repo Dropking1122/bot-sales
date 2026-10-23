@@ -121,7 +121,7 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           {/* QR Code Container */}
-          <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/60 min-h-[260px]">
+          <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/60 min-h-[280px]">
             {waStatus?.status === 'CONNECTED' ? (
               <div className="text-center space-y-2">
                 <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center">
@@ -134,24 +134,41 @@ export const SettingsPage: React.FC = () => {
                   Bot siap merespons pesan pelanggan & memproses antrean broadcast.
                 </p>
               </div>
-            ) : waStatus?.qrImage ? (
+            ) : (waStatus?.qrCode || waStatus?.qrImage) ? (
               <div className="text-center space-y-3">
-                <img
-                  src={waStatus.qrImage}
-                  alt="QR Code WhatsApp"
-                  className="w-56 h-56 rounded-xl border border-slate-300 shadow-md mx-auto"
-                />
-                <p className="text-xs text-slate-500">
-                  Buka WhatsApp di HP Anda &gt; Menu &gt; Perangkat Tertaut &gt; Pindai Kode QR
-                </p>
+                <div className="p-3 bg-white rounded-2xl shadow-md inline-block border border-slate-200 dark:border-slate-700">
+                  <img
+                    src={waStatus?.qrCode || waStatus?.qrImage}
+                    alt="QR Code WhatsApp"
+                    className="w-56 h-56 rounded-lg block mx-auto"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Buka WhatsApp di Ponsel Anda
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Menu Titik Tiga / Pengaturan &gt; Perangkat Tertaut &gt; Tautkan Perangkat &gt; Pindai QR di atas
+                  </p>
+                </div>
+              </div>
+            ) : waStatus?.status === 'INITIALIZING' || waActionLoading ? (
+              <div className="text-center space-y-3 text-slate-400">
+                <Loader2 className="w-8 h-8 mx-auto animate-spin text-blue-500" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Sedang Memulai Browser WhatsApp...
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Menghubungkan Chrome & menyiapkan QR Code baru (~5-10 detik)
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="text-center space-y-2 text-slate-400">
                 <WifiOff className="w-8 h-8 mx-auto opacity-50" />
-                <p className="text-xs">
-                  {waActionLoading
-                    ? 'Sedang menginisialisasi browser WhatsApp...'
-                    : 'WhatsApp belum terhubung. Klik "Hubungkan WhatsApp" di bawah.'}
+                <p className="text-xs text-slate-500">
+                  WhatsApp belum terhubung. Klik tombol di bawah untuk menampilkan QR Code.
                 </p>
               </div>
             )}
