@@ -110,3 +110,55 @@ export async function updateSettings(req: Request, res: Response, next: NextFunc
     next(err);
   }
 }
+
+// ─── Motor Categories (stored as JSON array in BotSetting) ───
+
+const CATEGORIES_KEY = 'motor_categories';
+const DEFAULT_CATEGORIES = ['Matic', 'Matic Maxi', 'Sport', 'Bebek', 'Trail', 'Naked', 'Touring', 'Adventure'];
+
+async function getCategoriesArray(): Promise<string[]> {
+  const row = await prisma.botSetting.findUnique({ where: { key: CATEGORIES_KEY } });
+  if (!row) return DEFAULT_CATEGORIES;
+  try { return JSON.parse(row.value); } catch { return DEFAULT_CATEGORIES; }
+}
+
+export async function getCategories(_req: Request, res: Response, next: NextFunction) {
+  try {
+    return res.json({ success: true, data: await getCategoriesArray() });
+  } catch (err) { next(err); }
+}
+
+export async function addCategory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const name = String(req.body.name ?? '').trim();
+    if (!name) return res.status(400).json({ success: false, message: 'Nama kategori wajib diisi' });
+
+    const list = await getCategoriesArray();
+    if (list.some(c => c.toLowerCase() === name.toLowerCase())) {
+      return res.status(409).json({ success: false, message: 'Kategori sudah ada' });
+    }
+
+    list.push(name);
+    await prisma.botSetting.upsert({
+      where: { key: CATEGORIES_KEY },
+      update: { value: JSON.stringify(list) },
+      create: { key: CATEGORIES_KEY, value: JSON.stringify(list), description: 'Daftar kategori motor' }
+    });
+    await logAudit(req, 'ADD_CATEGORY', 'BotSetting', null, { name });
+    return res.json({ success: true, data: list });
+  } catch (err) { next(err); }
+}
+
+export async function deleteCategory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const name = String(req.params.name ?? '').trim();
+    const list = (await getCategoriesArray()).filter(c => c !== name);
+    await prisma.botSetting.upsert({
+      where: { key: CATEGORIES_KEY },
+      update: { value: JSON.stringify(list) },
+      create: { key: CATEGORIES_KEY, value: JSON.stringify(list), description: 'Daftar kategori motor' }
+    });
+    await logAudit(req, 'DELETE_CATEGORY', 'BotSetting', null, { name });
+    return res.json({ success: true, data: list });
+  } catch (err) { next(err); }
+}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../lib/api';
-import { Bike, Plus, Search, Filter, Trash2, Edit, Image, Check, AlertCircle, X, Loader2 } from 'lucide-react';
+import { Bike, Plus, Search, Filter, Trash2, Edit, Image, Check, AlertCircle, X, Loader2, Tag, Layers } from 'lucide-react';
 
 export const MotorcyclesPage: React.FC = () => {
   const [motorcycles, setMotorcycles] = useState<any[]>([]);
@@ -30,6 +30,19 @@ export const MotorcyclesPage: React.FC = () => {
   const [uploadModalMotor, setUploadModalMotor] = useState<any | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Brand Manage Modal
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [newBrandName, setNewBrandName] = useState('');
+  const [editingBrand, setEditingBrand] = useState<any | null>(null);
+  const [brandSaving, setBrandSaving] = useState(false);
+  const [brandError, setBrandError] = useState<string | null>(null);
+
+  // Category Manage Modal
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [newCategory, setNewCategory] = useState('');
+  const [categorySaving, setCategorySaving] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -64,6 +77,10 @@ export const MotorcyclesPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [page, search, selectedBrand]);
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +163,80 @@ export const MotorcyclesPage: React.FC = () => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   };
 
+  // ─── Brand CRUD ───
+  const loadCategories = async () => {
+    try {
+      const res = await apiRequest('/settings/categories');
+      if (res.success) setCategories(res.data);
+    } catch {}
+  };
+
+  const handleAddBrand = async () => {
+    const name = newBrandName.trim();
+    if (!name) return;
+    setBrandSaving(true);
+    setBrandError(null);
+    try {
+      if (editingBrand) {
+        await apiRequest(`/brands/${editingBrand.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name })
+        });
+      } else {
+        await apiRequest('/brands', {
+          method: 'POST',
+          body: JSON.stringify({ name })
+        });
+      }
+      setNewBrandName('');
+      setEditingBrand(null);
+      loadData();
+    } catch (err: any) {
+      setBrandError(err.message || 'Gagal menyimpan merk');
+    } finally {
+      setBrandSaving(false);
+    }
+  };
+
+  const handleDeleteBrand = async (id: string, name: string) => {
+    if (!confirm(`Hapus merk "${name}"?`)) return;
+    try {
+      await apiRequest(`/brands/${id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err: any) {
+      setBrandError(err.message || 'Gagal menghapus merk');
+    }
+  };
+
+  // ─── Category CRUD ───
+  const handleAddCategory = async () => {
+    const name = newCategory.trim();
+    if (!name) return;
+    setCategorySaving(true);
+    try {
+      const res = await apiRequest('/settings/categories', {
+        method: 'POST',
+        body: JSON.stringify({ name })
+      });
+      if (res.success) setCategories(res.data);
+      setNewCategory('');
+    } catch (err: any) {
+      alert(err.message || 'Gagal menambah kategori');
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleDeleteCategory = async (name: string) => {
+    if (!confirm(`Hapus kategori "${name}"?`)) return;
+    try {
+      const res = await apiRequest(`/settings/categories/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (res.success) setCategories(res.data);
+    } catch (err: any) {
+      alert(err.message || 'Gagal menghapus kategori');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -159,13 +250,29 @@ export const MotorcyclesPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors shadow-sm self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Motor</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <button
+            onClick={() => { setShowBrandModal(true); setBrandError(null); }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs transition-colors shadow-sm"
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span>Kelola Merk</span>
+          </button>
+          <button
+            onClick={() => { setShowCategoryModal(true); loadCategories(); }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs transition-colors shadow-sm"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Kelola Kategori</span>
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Motor</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -398,12 +505,15 @@ export const MotorcyclesPage: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Kategori</label>
-                  <input
-                    type="text"
+                  <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
-                  />
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:ring-2 focus:ring-blue-500"
+                  >
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Kondisi</label>
@@ -514,6 +624,141 @@ export const MotorcyclesPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Brand Manage Modal */}
+      {showBrandModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <Tag className="w-4 h-4" /> Kelola Merk Motor
+              </h3>
+              <button onClick={() => { setShowBrandModal(false); setEditingBrand(null); setNewBrandName(''); }} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {brandError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{brandError}</span>
+                </div>
+              )}
+
+              {/* Add / Edit Brand */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nama merk baru..."
+                  value={newBrandName}
+                  onChange={(e) => setNewBrandName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddBrand()}
+                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  onClick={handleAddBrand}
+                  disabled={brandSaving || !newBrandName.trim()}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1"
+                >
+                  {brandSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {editingBrand ? 'Simpan' : 'Tambah'}
+                </button>
+                {editingBrand && (
+                  <button onClick={() => { setEditingBrand(null); setNewBrandName(''); }} className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-xs">
+                    Batal
+                  </button>
+                )}
+              </div>
+
+              {/* Brand List */}
+              <div className="space-y-1.5">
+                {brands.length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-4">Belum ada merk</p>
+                )}
+                {brands.map((b) => (
+                  <div key={b.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 group">
+                    <span className="text-xs font-medium text-slate-800 dark:text-slate-200">{b.name}</span>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => { setEditingBrand(b); setNewBrandName(b.name); }}
+                        className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600"
+                        title="Edit"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBrand(b.id, b.name)}
+                        className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-600"
+                        title="Hapus"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Manage Modal */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <Layers className="w-4 h-4" /> Kelola Kategori Motor
+              </h3>
+              <button onClick={() => setShowCategoryModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {/* Add Category */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nama kategori baru..."
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:ring-2 focus:ring-amber-500"
+                />
+                <button
+                  onClick={handleAddCategory}
+                  disabled={categorySaving || !newCategory.trim()}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1"
+                >
+                  {categorySaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Tambah
+                </button>
+              </div>
+
+              {/* Category List */}
+              <div className="flex flex-wrap gap-2">
+                {categories.length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-4 w-full">Belum ada kategori</p>
+                )}
+                {categories.map((cat) => (
+                  <div key={cat} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs font-medium text-amber-800 dark:text-amber-300">
+                    <span>{cat}</span>
+                    <button
+                      onClick={() => handleDeleteCategory(cat)}
+                      className="p-0.5 rounded-full hover:bg-amber-200 dark:hover:bg-amber-800 text-amber-600 dark:text-amber-400"
+                      title="Hapus"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
