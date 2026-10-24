@@ -130,22 +130,17 @@ export const SettingsPage: React.FC = () => {
     setUploadingLogo(true);
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('logo', file);
 
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/settings/logo', {
+      const res = await apiRequest('/settings/logo', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
         body: formData
       });
-      const data = await res.json();
-      if (data.success && data.url) {
-        setSettings((prev) => ({ ...prev, web_logo_url: data.url }));
-        updateSettingsState({ web_logo_url: data.url });
+      if (res.success && res.data?.url) {
+        setSettings((prev) => ({ ...prev, web_logo_url: res.data.url }));
+        updateSettingsState({ web_logo_url: res.data.url });
       } else {
-        alert(data.message || 'Gagal mengunggah logo');
+        alert(res.message || 'Gagal mengunggah logo');
       }
     } catch (err: any) {
       alert(err.message || 'Terjadi kesalahan saat unggah logo');

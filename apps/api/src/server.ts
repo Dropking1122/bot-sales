@@ -31,6 +31,8 @@ import { startBroadcastWorker } from './jobs/broadcastWorker';
 const app = express();
 
 // Security and middleware
+app.set('trust proxy', 1);
+
 app.use((_req, res, next) => {
   // Clear any cached HSTS in clients from earlier misconfiguration
   res.setHeader('Strict-Transport-Security', 'max-age=0');
@@ -41,25 +43,21 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: false,
     hsts: false
   })
 );
 
-const allowedOrigins = [
-  'http://localhost:8090',
-  'http://127.0.0.1:8090',
-  'http://38.47.85.35:8090'
-];
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || origin.includes('38.47.85.35') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      return callback(null, true);
-    }
-    return callback(new Error('CORS policy: Access denied from this origin'), false);
-  },
-  credentials: true
-}));
+// Enable CORS for all incoming origins with full preflight & credentials support
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin']
+  })
+);
+app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

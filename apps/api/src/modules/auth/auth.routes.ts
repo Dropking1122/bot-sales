@@ -17,10 +17,10 @@ const router = Router();
 // Rate limiter for authentication attempts (anti brute-force)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 menit
-  max: 15, // maksimal 15 percobaan per 15 menit per IP
+  max: 60, // maksimal 60 percobaan per 15 menit per IP
   message: {
     success: false,
-    message: 'Terlalu banyak percobaan autentikasi. Silakan tunggu 15 menit sebelum mencoba kembali.'
+    message: 'Terlalu banyak percobaan autentikasi. Silakan tunggu beberapa saat sebelum mencoba kembali.'
   },
   standardHeaders: true,
   legacyHeaders: false

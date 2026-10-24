@@ -29,10 +29,19 @@ export async function apiRequest<T = any>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers
+    });
+  } catch (netErr: any) {
+    throw new ApiError(
+      'Gagal terhubung ke server (Failed to fetch). Periksa koneksi internet atau pastikan server aktif.',
+      0,
+      netErr
+    );
+  }
 
   if (response.status === 401) {
     localStorage.removeItem('bot_sales_token');
