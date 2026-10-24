@@ -376,13 +376,14 @@ class WhatsAppManager {
         tenorMonths: 35
       });
 
+      const cleanKw = (motor.model || motor.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
       return `🏍️ *${motor.name.toUpperCase()}*\n` +
         `Merek: ${motor.brand.name} | Tahun: ${motor.year} | ${motor.condition}\n\n` +
         `💵 *Harga OTR:* ${formatRupiah(otr)}\n` +
         `💳 *DP Mulai:* ${formatRupiah(minDp)}\n` +
         `📊 *Estimasi Cicilan (35 bln):* ${formatRupiah(sim.monthlyInstallment)}/bln\n\n` +
         `📝 *Deskripsi:*\n${motor.description || '-'}\n\n` +
-        `👉 Ketik: *SIMULASI ${motor.name.split(' ')[0].toUpperCase()}* untuk melihat tabel angsuran lengkap.\n` +
+        `👉 Ketik: *SIMULASI ${cleanKw}* untuk melihat tabel angsuran lengkap.\n` +
         `Ketik *SALES* untuk terhubung langsung dengan konsultan kami untuk pemesanan!`;
     }
 
@@ -448,11 +449,10 @@ class WhatsAppManager {
         popularMotors.forEach((m, idx) => {
           const otr = Number(m.priceOtr);
           const minDp = m.minDp ? Number(m.minDp) : Math.round(otr * 0.1);
-          const parts = m.name.split(' ');
-          const keyword = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+          const cleanKw = (m.model || m.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
           res += `${idx + 1}. *${m.name}* (${m.brand.name})\n` +
             `   • OTR: ${formatRupiah(otr)} | DP Mulai: ${formatRupiah(minDp)}\n` +
-            `   👉 Ketik: *SIMULASI ${keyword}*\n\n`;
+            `   👉 Ketik: *SIMULASI ${cleanKw}*\n\n`;
         });
       }
 
@@ -582,9 +582,8 @@ class WhatsAppManager {
       let failMsg = `Motor dengan kata kunci "${cleaned}" tidak ditemukan di katalog kami.\n\n` +
         `🏍️ *Daftar Motor Yang Tersedia:*\n`;
       allMotors.slice(0, 5).forEach((m, idx) => {
-        const parts = m.name.split(' ');
-        const kw = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
-        failMsg += `${idx + 1}. *${m.name}* (Ketik: *SIMULASI ${kw}*)\n`;
+        const cleanKw = (m.model || m.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
+        failMsg += `${idx + 1}. *${m.name}* (Ketik: *SIMULASI ${cleanKw}*)\n`;
       });
       failMsg += `\nAtau ketik *KATALOG* untuk melihat semua unit yang tersedia.`;
       return failMsg;
@@ -599,12 +598,11 @@ class WhatsAppManager {
     }
 
     if (finalDp < minDp) {
-      const parts = matchedMotor.name.split(' ');
-      const kw = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+      const cleanKw = (matchedMotor.model || matchedMotor.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
       return `⚠️ *DP Di Bawah Ketentuan Dealer*\n\n` +
         `Motor *${matchedMotor.name}* memiliki ketentuan DP Minimal sebesar *${formatRupiah(minDp)}*.\n` +
         `Silakan masukkan DP minimal ${formatRupiah(minDp)} atau lebih.\n\n` +
-        `Contoh: *SIMULASI ${kw} ${minDp}*`;
+        `Contoh: *SIMULASI ${cleanKw} ${minDp}*`;
     }
 
     const availableTenors =
@@ -622,6 +620,7 @@ class WhatsAppManager {
 
     return formatMultiTenorText({
       motorName: matchedMotor.name,
+      modelName: matchedMotor.model,
       brandName: matchedMotor.brand?.name,
       hargaOtr: otr,
       dpAmount: finalDp,

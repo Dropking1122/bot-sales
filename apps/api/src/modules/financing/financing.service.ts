@@ -127,6 +127,7 @@ export async function calculateMultiTenors(
 
 export function formatMultiTenorText(params: {
   motorName?: string;
+  modelName?: string;
   brandName?: string;
   hargaOtr: number;
   dpAmount: number;
@@ -151,9 +152,11 @@ export function formatMultiTenorText(params: {
 
   text += `\n_Catatan: Angka di atas estimasi standar dealer. Nilai final dapat bervariasi sesuai promo leasing dan persetujuan survei._\n\n`;
   
-  if (params.motorName) {
-    const parts = params.motorName.split(' ');
-    const keyword = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+  if (params.motorName || params.modelName) {
+    const rawKw = params.modelName || params.motorName || '';
+    // If motorName starts with "All New Honda " or "New Honda ", strip that
+    const cleanKw = rawKw.replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim();
+    const keyword = cleanKw.split(' ')[0].toUpperCase();
     text += `💡 *Ingin coba DP berbeda?*\nKetik: *SIMULASI ${keyword} <DP>*\nContoh: *SIMULASI ${keyword} 4jt*\n\n`;
   } else {
     text += `💡 *Format Simulasi Manual:* *SIMULASI <OTR> <DP> <TENOR>*\nContoh: *SIMULASI 28jt 3jt 35*\n\n`;

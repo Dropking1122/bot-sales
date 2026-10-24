@@ -10,6 +10,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
     "prisma:seed": "tsx prisma/seed.ts",
+    "import:honda": "tsx src/scripts/import_honda.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts"
   },
