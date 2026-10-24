@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "node scripts/patch-wwebjs.js || true",
     "build": "npm run --workspaces --if-present build",
     "dev:api": "npm run --workspace=@bot-sales/api dev",
     "dev:web": "npm run --workspace=@bot-sales/web dev",
