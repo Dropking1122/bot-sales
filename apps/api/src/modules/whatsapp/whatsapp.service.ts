@@ -286,13 +286,16 @@ class WhatsAppManager {
 
         if (payload.mediaPath && fs.existsSync(payload.mediaPath)) {
           try {
+            logger.info({ mediaPath: payload.mediaPath }, 'Sending motorcycle photo with caption to client');
             const media = MessageMedia.fromFilePath(payload.mediaPath);
             await msg.reply(media, undefined, { caption: payload.text });
+            logger.info('Motorcycle photo sent successfully');
           } catch (mediaErr) {
             logger.error({ mediaErr }, 'Failed to send media with caption, sending text only');
             await msg.reply(payload.text);
           }
         } else {
+          logger.info({ mediaPath: payload.mediaPath }, 'No valid media path found, sending text only');
           await msg.reply(payload.text);
         }
 
@@ -522,12 +525,22 @@ class WhatsAppManager {
     if (motor.images && motor.images.length > 0) {
       const relUrl = motor.images[0].url;
       mediaUrl = relUrl;
-      const candidate1 = path.join(process.cwd(), relUrl);
-      const candidate2 = path.resolve(process.cwd(), relUrl.replace(/^\//, ''));
-      if (fs.existsSync(candidate1)) {
-        mediaPath = candidate1;
-      } else if (fs.existsSync(candidate2)) {
-        mediaPath = candidate2;
+      const filename = path.basename(relUrl);
+
+      const candidates = [
+        path.join(config.storage.uploadsDir, 'motorcycles', filename),
+        path.join(config.storage.uploadsDir, filename),
+        path.resolve(config.storage.baseDir, relUrl.replace(/^\/storage\/?/, '')),
+        path.resolve('/root/bot-sales/storage/uploads/motorcycles', filename),
+        path.join(process.cwd(), relUrl),
+        path.resolve(process.cwd(), '../../', relUrl.replace(/^\//, ''))
+      ];
+
+      for (const cand of candidates) {
+        if (fs.existsSync(cand)) {
+          mediaPath = cand;
+          break;
+        }
       }
     }
 
