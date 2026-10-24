@@ -338,6 +338,13 @@ export const InboxPage: React.FC = () => {
                               : 'bg-blue-600 text-white rounded-tr-none'
                           }`}
                         >
+                          {m.mediaUrl && (
+                            <img
+                              src={m.mediaUrl}
+                              alt="Foto Motor"
+                              className="rounded-xl max-h-48 w-full object-contain mb-2 bg-white/40 dark:bg-slate-900/40 p-1 border border-slate-200/50 dark:border-slate-700/50"
+                            />
+                          )}
                           {m.content}
                         </div>
                       </div>

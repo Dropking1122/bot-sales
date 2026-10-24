@@ -1,4 +1,6 @@
-import { Client, LocalAuth, Message as WAMessage } from 'whatsapp-web.js';
+import fs from 'fs';
+import path from 'path';
+import { Client, LocalAuth, Message as WAMessage, MessageMedia } from 'whatsapp-web.js';
 import qrcode from 'qrcode';
 import { config } from '../../config/env';
 import { logger } from '../../config/logger';
@@ -11,6 +13,13 @@ import {
   formatSimulationText,
   parseIndonesianNumber
 } from '../financing/financing.service';
+
+export interface BotResponsePayload {
+  text: string;
+  mediaPath?: string;
+  mediaUrl?: string;
+  mediaType?: string;
+}
 
 class WhatsAppManager {
   private client: Client | null = null;
@@ -269,18 +278,32 @@ class WhatsAppManager {
       }
 
       // 4. Determine Bot Intent & Reply
-      const replyText = await this.resolveBotResponse(body, contact);
+      const botResponse = await this.resolveBotResponse(body, contact);
 
-      if (replyText) {
-        // Send reply via WA
-        await msg.reply(replyText);
+      if (botResponse) {
+        const payload: BotResponsePayload =
+          typeof botResponse === 'string' ? { text: botResponse } : botResponse;
+
+        if (payload.mediaPath && fs.existsSync(payload.mediaPath)) {
+          try {
+            const media = MessageMedia.fromFilePath(payload.mediaPath);
+            await msg.reply(media, undefined, { caption: payload.text });
+          } catch (mediaErr) {
+            logger.error({ mediaErr }, 'Failed to send media with caption, sending text only');
+            await msg.reply(payload.text);
+          }
+        } else {
+          await msg.reply(payload.text);
+        }
 
         // Store bot message in DB
         await prisma.message.create({
           data: {
             conversationId: conversation.id,
             senderType: 'BOT',
-            content: replyText,
+            content: payload.text,
+            mediaUrl: payload.mediaUrl || null,
+            mediaType: payload.mediaType || (payload.mediaUrl ? 'image/png' : null),
             status: 'SENT'
           }
         });
@@ -290,7 +313,7 @@ class WhatsAppManager {
     }
   }
 
-  private async resolveBotResponse(text: string, contact: any): Promise<string> {
+  private async resolveBotResponse(text: string, contact: any): Promise<string | BotResponsePayload> {
     const lower = text.toLowerCase().trim();
 
     // 1. Opt-out request
@@ -357,7 +380,13 @@ class WhatsAppManager {
       const idx = parseInt(singleNumberMatch[1], 10);
       const allMotors = await prisma.motorcycle.findMany({
         where: { isActive: true },
-        include: { brand: true },
+        include: {
+          brand: true,
+          images: {
+            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+            take: 1
+          }
+        },
         orderBy: { priceOtr: 'asc' }
       });
 
@@ -372,7 +401,13 @@ class WhatsAppManager {
       
       const allMotors = await prisma.motorcycle.findMany({
         where: { isActive: true },
-        include: { brand: true },
+        include: {
+          brand: true,
+          images: {
+            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+            take: 1
+          }
+        },
         orderBy: { priceOtr: 'asc' }
       });
 
@@ -442,7 +477,7 @@ class WhatsAppManager {
       `• *SALES* - Bicara dengan tim sales kami`;
   }
 
-  private async formatMotorDetail(motor: any, index?: number): Promise<string> {
+  private async formatMotorDetail(motor: any, index?: number): Promise<BotResponsePayload> {
     const otr = Number(motor.priceOtr);
     const minDp = motor.minDp ? Number(motor.minDp) : Math.round(otr * 0.1);
 
@@ -462,7 +497,8 @@ class WhatsAppManager {
       `📊 *Estimasi Cicilan (35 bln):* ${formatRupiah(sim.monthlyInstallment)}/bln\n\n`;
 
     if (motor.colors && motor.colors.length > 0) {
-      res += `🎨 *Pilihan Warna:*\n${motor.colors.join(', ')}\n\n`;
+      res += `🎨 *Pilihan Warna Ready:*\n` +
+        motor.colors.map((c: string) => `• ${c}`).join('\n') + `\n\n`;
     }
 
     res += `📝 *Deskripsi & Fitur:*\n${motor.description || '-'}\n\n` +
@@ -479,7 +515,28 @@ class WhatsAppManager {
     res += `• Ketik *KATALOG* : Kembali ke daftar motor\n` +
       `• Ketik *SALES* : Konsultasi langsung dengan konsultan kami`;
 
-    return res;
+    // Locate primary photo
+    let mediaPath: string | undefined = undefined;
+    let mediaUrl: string | undefined = undefined;
+
+    if (motor.images && motor.images.length > 0) {
+      const relUrl = motor.images[0].url;
+      mediaUrl = relUrl;
+      const candidate1 = path.join(process.cwd(), relUrl);
+      const candidate2 = path.resolve(process.cwd(), relUrl.replace(/^\//, ''));
+      if (fs.existsSync(candidate1)) {
+        mediaPath = candidate1;
+      } else if (fs.existsSync(candidate2)) {
+        mediaPath = candidate2;
+      }
+    }
+
+    return {
+      text: res,
+      mediaPath,
+      mediaUrl,
+      mediaType: 'image/png'
+    };
   }
 
   private async handleSimulationQuery(rawText: string): Promise<string> {
