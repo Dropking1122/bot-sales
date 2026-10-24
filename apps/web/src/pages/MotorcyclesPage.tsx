@@ -11,8 +11,9 @@ export const MotorcyclesPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Add Modal State
+  // Add/Edit Modal State
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingMotorcycle, setEditingMotorcycle] = useState<any | null>(null);
   const [formSku, setFormSku] = useState('');
   const [formName, setFormName] = useState('');
   const [formBrandId, setFormBrandId] = useState('');
@@ -22,6 +23,7 @@ export const MotorcyclesPage: React.FC = () => {
   const [formCondition, setFormCondition] = useState('BARU');
   const [formPriceOtr, setFormPriceOtr] = useState('');
   const [formMinDp, setFormMinDp] = useState('');
+  const [formStockStatus, setFormStockStatus] = useState('TERSEDIA');
   const [formDescription, setFormDescription] = useState('');
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -82,7 +84,41 @@ export const MotorcyclesPage: React.FC = () => {
     loadCategories();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleOpenAdd = () => {
+    setEditingMotorcycle(null);
+    setFormSku('');
+    setFormName('');
+    setFormBrandId(brands.length > 0 ? brands[0].id : '');
+    setFormModel('');
+    setFormYear(new Date().getFullYear());
+    setFormCategory(categories[0] || 'Matic');
+    setFormCondition('BARU');
+    setFormPriceOtr('');
+    setFormMinDp('');
+    setFormStockStatus('TERSEDIA');
+    setFormDescription('');
+    setFormError(null);
+    setShowAddModal(true);
+  };
+
+  const handleOpenEdit = (m: any) => {
+    setEditingMotorcycle(m);
+    setFormSku(m.sku || '');
+    setFormName(m.name || '');
+    setFormBrandId(m.brandId || (brands[0]?.id || ''));
+    setFormModel(m.model || m.name || '');
+    setFormYear(m.year || new Date().getFullYear());
+    setFormCategory(m.category || 'Matic');
+    setFormCondition(m.condition || 'BARU');
+    setFormPriceOtr(String(m.priceOtr || ''));
+    setFormMinDp(m.minDp !== null && m.minDp !== undefined ? String(m.minDp) : '');
+    setFormStockStatus(m.stockStatus || 'TERSEDIA');
+    setFormDescription(m.description || '');
+    setFormError(null);
+    setShowAddModal(true);
+  };
+
+  const handleSaveMotorcycle = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSaving(true);
     setFormError(null);
@@ -99,25 +135,27 @@ export const MotorcyclesPage: React.FC = () => {
         priceOtr: Number(formPriceOtr),
         minDp: formMinDp ? Number(formMinDp) : null,
         description: formDescription.trim(),
-        stockStatus: 'TERSEDIA',
+        stockStatus: formStockStatus,
         isActive: true
       };
 
-      const res = await apiRequest('/motorcycles', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-
-      if (res.success) {
-        setShowAddModal(false);
-        // Reset form
-        setFormSku('');
-        setFormName('');
-        setFormPriceOtr('');
-        setFormMinDp('');
-        setFormDescription('');
-        loadData();
+      if (editingMotorcycle) {
+        const res = await apiRequest(`/motorcycles/${editingMotorcycle.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
+        if (!res.success) throw new Error(res.error || 'Gagal memperbarui data motor');
+      } else {
+        const res = await apiRequest('/motorcycles', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        if (!res.success) throw new Error(res.error || 'Gagal menyimpan motor');
       }
+
+      setShowAddModal(false);
+      setEditingMotorcycle(null);
+      loadData();
     } catch (err: any) {
       setFormError(err.message || 'Gagal menyimpan motor');
     } finally {
@@ -266,7 +304,7 @@ export const MotorcyclesPage: React.FC = () => {
             <span>Kelola Kategori</span>
           </button>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={handleOpenAdd}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -387,9 +425,16 @@ export const MotorcyclesPage: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
+                          onClick={() => handleOpenEdit(m)}
+                          title="Edit Produk"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => setUploadModalMotor(m)}
                           title="Upload Foto"
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                         >
                           <Image className="w-4 h-4" />
                         </button>
@@ -433,18 +478,20 @@ export const MotorcyclesPage: React.FC = () => {
         )}
       </div>
 
-      {/* Add Motor Modal */}
+      {/* Add / Edit Motor Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">Tambah Motor Baru</h3>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                {editingMotorcycle ? 'Edit Data Motor' : 'Tambah Motor Baru'}
+              </h3>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="p-5 overflow-y-auto space-y-4 flex-1">
+            <form onSubmit={handleSaveMotorcycle} className="p-5 overflow-y-auto space-y-4 flex-1">
               {formError && (
                 <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -493,7 +540,7 @@ export const MotorcyclesPage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tahun</label>
                   <input
@@ -526,6 +573,18 @@ export const MotorcyclesPage: React.FC = () => {
                     <option value="BEKAS">BEKAS</option>
                   </select>
                 </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Status Stok</label>
+                  <select
+                    value={formStockStatus}
+                    onChange={(e) => setFormStockStatus(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
+                  >
+                    <option value="TERSEDIA">TERSEDIA</option>
+                    <option value="INDENT">INDENT</option>
+                    <option value="HABIS">HABIS</option>
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -553,9 +612,9 @@ export const MotorcyclesPage: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Deskripsi / Spesifikasi</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Deskripsi / Spesifikasi & Pilihan Warna</label>
                 <textarea
-                  rows={3}
+                  rows={4}
                   placeholder="Informasi mesin, fitur kunci, varian warna..."
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
@@ -577,7 +636,7 @@ export const MotorcyclesPage: React.FC = () => {
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5"
                 >
                   {formSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Simpan Motor</span>
+                  <span>{editingMotorcycle ? 'Simpan Perubahan' : 'Simpan Motor'}</span>
                 </button>
               </div>
             </form>

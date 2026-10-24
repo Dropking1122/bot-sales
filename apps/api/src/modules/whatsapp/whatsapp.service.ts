@@ -285,14 +285,52 @@ class WhatsAppManager {
           typeof botResponse === 'string' ? { text: botResponse } : botResponse;
 
         if (payload.mediaPath && fs.existsSync(payload.mediaPath)) {
+          let mediaSent = false;
           try {
-            logger.info({ mediaPath: payload.mediaPath }, 'Sending motorcycle photo with caption to client');
+            logger.info({ mediaPath: payload.mediaPath, from: msg.from }, 'Sending motorcycle photo with caption to client');
             const media = MessageMedia.fromFilePath(payload.mediaPath);
-            await msg.reply(media, undefined, { caption: payload.text });
-            logger.info('Motorcycle photo sent successfully');
-          } catch (mediaErr) {
-            logger.error({ mediaErr }, 'Failed to send media with caption, sending text only');
-            await msg.reply(payload.text);
+            // Primary attempt: sendMessage directly to msg.from (avoids quotedMessageId lookup errors)
+            if (this.client) {
+              await this.client.sendMessage(msg.from, media, { caption: payload.text });
+              logger.info('Motorcycle photo sent successfully via sendMessage');
+              mediaSent = true;
+            } else {
+              throw new Error('WhatsApp client is not initialized');
+            }
+          } catch (mediaErr: any) {
+            logger.error(
+              {
+                errName: mediaErr?.name,
+                errMsg: mediaErr?.message,
+                errStack: mediaErr?.stack
+              },
+              'Failed to send media via sendMessage, attempting msg.reply'
+            );
+
+            try {
+              const media = MessageMedia.fromFilePath(payload.mediaPath);
+              await msg.reply(media, undefined, { caption: payload.text });
+              logger.info('Motorcycle photo sent successfully via msg.reply');
+              mediaSent = true;
+            } catch (replyErr: any) {
+              logger.error(
+                {
+                  errName: replyErr?.name,
+                  errMsg: replyErr?.message,
+                  errStack: replyErr?.stack
+                },
+                'Failed to send media via msg.reply, falling back to text with direct image URL'
+              );
+            }
+          }
+
+          if (!mediaSent) {
+            let textWithPhotoLink = payload.text;
+            if (payload.mediaUrl) {
+              const fullUrl = `https://m.revd.dev${payload.mediaUrl}`;
+              textWithPhotoLink = `📷 *Foto Unit Motor:*\n${fullUrl}\n\n` + payload.text;
+            }
+            await msg.reply(textWithPhotoLink);
           }
         } else {
           logger.info({ mediaPath: payload.mediaPath }, 'No valid media path found, sending text only');
