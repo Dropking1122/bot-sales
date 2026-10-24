@@ -324,11 +324,11 @@ class WhatsAppManager {
     }
 
     // 3. Catalog request
-    if (lower === 'katalog' || lower === 'motor' || lower === 'daftar motor' || lower.includes('pilihan')) {
+    if (lower === 'katalog' || lower === 'motor' || lower === 'daftar' || lower === 'daftar motor' || lower.includes('pilihan')) {
       const motors = await prisma.motorcycle.findMany({
         where: { isActive: true },
         include: { brand: true },
-        take: 8,
+        take: 15,
         orderBy: { priceOtr: 'asc' }
       });
 
@@ -336,55 +336,72 @@ class WhatsAppManager {
         return 'Saat ini belum ada data motor aktif di katalog. Hubungi sales kami untuk info unit ready.';
       }
 
-      let res = `🏍️ *KATALOG MOTOR DEALER RESMI*\n\n`;
+      let res = `🏍️ *KATALOG MOTOR DEALER RESMI*\n\n` +
+        `Silakan pilih motor dengan membalas *NOMOR ANGKA* (contoh: ketik *2*):\n\n`;
+
       motors.forEach((m, idx) => {
         const otr = Number(m.priceOtr);
         const minDp = m.minDp ? Number(m.minDp) : otr * 0.1;
         res += `${idx + 1}. *${m.name}* (${m.brand.name})\n`;
-        res += `   • OTR: ${formatRupiah(otr)}\n`;
-        res += `   • DP Mulai: ${formatRupiah(minDp)}\n`;
-        res += `   • Ketik: *INFO ${m.sku}*\n\n`;
+        res += `   • OTR: ${formatRupiah(otr)} | DP: ${formatRupiah(minDp)}\n`;
       });
-      res += `Ketik *INFO <SKU>* untuk detail spesifikasi & simulasi kredit.`;
+
+      res += `\n👉 *Cukup ketik ANGKA pilihan Anda (misal: 1 s/d ${motors.length})* untuk langsung melihat detail & simulasi kreditnya!\n` +
+        `Ketik *SALES* untuk bicara langsung dengan konsultan kami.`;
       return res;
     }
 
-    // 4. Detail request: "INFO <SKU>" or "DETAIL <SKU>"
+    // 3b. Direct number selection: e.g. "1", "2", "3", ...
+    const singleNumberMatch = lower.match(/^#?(\d{1,2})$/);
+    if (singleNumberMatch) {
+      const idx = parseInt(singleNumberMatch[1], 10);
+      const allMotors = await prisma.motorcycle.findMany({
+        where: { isActive: true },
+        include: { brand: true },
+        orderBy: { priceOtr: 'asc' }
+      });
+
+      if (idx >= 1 && idx <= allMotors.length) {
+        return await this.formatMotorDetail(allMotors[idx - 1], idx);
+      }
+    }
+
+    // 4. Detail request: "INFO <SKU/NOMOR>" or "DETAIL <SKU/NOMOR>"
     if (lower.startsWith('info ') || lower.startsWith('detail ')) {
       const query = lower.replace(/^(info|detail)\s+/, '').trim();
-      const motor = await prisma.motorcycle.findFirst({
-        where: {
-          OR: [
-            { sku: { equals: query, mode: 'insensitive' } },
-            { name: { contains: query, mode: 'insensitive' } }
-          ],
-          isActive: true
-        },
-        include: { brand: true }
+      
+      const allMotors = await prisma.motorcycle.findMany({
+        where: { isActive: true },
+        include: { brand: true },
+        orderBy: { priceOtr: 'asc' }
       });
 
-      if (!motor) {
-        return `Motor dengan kata kunci "${query}" tidak ditemukan di katalog kami. Ketik *KATALOG* untuk melihat daftar motor yang tersedia.`;
+      let motor: any = null;
+      let matchedIndex: number | undefined = undefined;
+
+      // Check if query is a number (e.g. "INFO 2")
+      const numQuery = parseInt(query, 10);
+      if (!isNaN(numQuery) && numQuery >= 1 && numQuery <= allMotors.length && /^\d+$/.test(query)) {
+        motor = allMotors[numQuery - 1];
+        matchedIndex = numQuery;
+      } else {
+        const foundIdx = allMotors.findIndex(
+          (m) =>
+            m.sku.toLowerCase() === query ||
+            m.name.toLowerCase().includes(query) ||
+            m.model.toLowerCase().includes(query)
+        );
+        if (foundIdx !== -1) {
+          motor = allMotors[foundIdx];
+          matchedIndex = foundIdx + 1;
+        }
       }
 
-      const otr = Number(motor.priceOtr);
-      const minDp = motor.minDp ? Number(motor.minDp) : otr * 0.1;
+      if (!motor) {
+        return `Motor "${query}" tidak ditemukan di katalog kami. Ketik *KATALOG* untuk melihat daftar nomor motor yang tersedia.`;
+      }
 
-      const sim = await calculateFinancing({
-        hargaOtr: otr,
-        dpAmount: minDp,
-        tenorMonths: 35
-      });
-
-      const cleanKw = (motor.model || motor.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
-      return `🏍️ *${motor.name.toUpperCase()}*\n` +
-        `Merek: ${motor.brand.name} | Tahun: ${motor.year} | ${motor.condition}\n\n` +
-        `💵 *Harga OTR:* ${formatRupiah(otr)}\n` +
-        `💳 *DP Mulai:* ${formatRupiah(minDp)}\n` +
-        `📊 *Estimasi Cicilan (35 bln):* ${formatRupiah(sim.monthlyInstallment)}/bln\n\n` +
-        `📝 *Deskripsi:*\n${motor.description || '-'}\n\n` +
-        `👉 Ketik: *SIMULASI ${cleanKw}* untuk melihat tabel angsuran lengkap.\n` +
-        `Ketik *SALES* untuk terhubung langsung dengan konsultan kami untuk pemesanan!`;
+      return await this.formatMotorDetail(motor, matchedIndex);
     }
 
     // 5. Simulation inquiry: "SIMULASI", "KREDIT", "CICILAN", "ANGSURAN"
@@ -425,6 +442,46 @@ class WhatsAppManager {
       `• *SALES* - Bicara dengan tim sales kami`;
   }
 
+  private async formatMotorDetail(motor: any, index?: number): Promise<string> {
+    const otr = Number(motor.priceOtr);
+    const minDp = motor.minDp ? Number(motor.minDp) : Math.round(otr * 0.1);
+
+    const sim = await calculateFinancing({
+      hargaOtr: otr,
+      dpAmount: minDp,
+      tenorMonths: 35
+    });
+
+    const cleanKw = (motor.model || motor.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
+    const numPrefix = index ? `[No. ${index}] ` : '';
+
+    let res = `🏍️ *${numPrefix}${motor.name.toUpperCase()}*\n` +
+      `Merek: ${motor.brand.name} | Kategori: ${motor.category} | ${motor.condition}\n\n` +
+      `💵 *Harga OTR:* ${formatRupiah(otr)}\n` +
+      `💳 *Uang Muka (DP) Mulai:* ${formatRupiah(minDp)}\n` +
+      `📊 *Estimasi Cicilan (35 bln):* ${formatRupiah(sim.monthlyInstallment)}/bln\n\n`;
+
+    if (motor.colors && motor.colors.length > 0) {
+      res += `🎨 *Pilihan Warna:*\n${motor.colors.join(', ')}\n\n`;
+    }
+
+    res += `📝 *Deskripsi & Fitur:*\n${motor.description || '-'}\n\n` +
+      `───────────────\n` +
+      `💡 *MENU PILIHAN CEPAT:*\n`;
+
+    if (index) {
+      res += `• Ketik *SIMULASI ${index}* : Hitung tabel angsuran lengkap\n` +
+        `• Ketik *SIMULASI ${index} <DP>* : Simulasi DP pilihan (contoh: *SIMULASI ${index} 3jt*)\n`;
+    } else {
+      res += `• Ketik *SIMULASI ${cleanKw}* : Hitung tabel angsuran lengkap\n`;
+    }
+
+    res += `• Ketik *KATALOG* : Kembali ke daftar motor\n` +
+      `• Ketik *SALES* : Konsultasi langsung dengan konsultan kami`;
+
+    return res;
+  }
+
   private async handleSimulationQuery(rawText: string): Promise<string> {
     const lower = rawText.toLowerCase().trim();
     // Strip triggers: "simulasi kredit", "simulasi cicilan", "simulasi", "kredit", "cicilan", "angsuran"
@@ -432,44 +489,45 @@ class WhatsAppManager {
       .replace(/^(simulasi\s+kredit|simulasi\s+cicilan|simulasi|kredit|cicilan|angsuran)\s*/i, '')
       .trim();
 
+    const allMotors = await prisma.motorcycle.findMany({
+      where: { isActive: true },
+      include: { brand: true },
+      orderBy: { priceOtr: 'asc' }
+    });
+
     // 1. If empty query: "SIMULASI" alone
     if (!cleaned) {
-      const popularMotors = await prisma.motorcycle.findMany({
-        where: { isActive: true },
-        include: { brand: true },
-        take: 5,
-        orderBy: { priceOtr: 'asc' }
-      });
+      const popularMotors = allMotors.slice(0, 8);
 
       let res = `📊 *LAYANAN SIMULASI KREDIT DEALER*\n\n` +
-        `Dapatkan rincian angsuran per bulan secara cepat dan transparan!\n\n`;
+        `Pilih nomor motor untuk melihat rincian cicilan:\n\n`;
 
       if (popularMotors.length > 0) {
-        res += `🏍️ *Pilihan Motor Siap Simulasi:*\n`;
         popularMotors.forEach((m, idx) => {
           const otr = Number(m.priceOtr);
           const minDp = m.minDp ? Number(m.minDp) : Math.round(otr * 0.1);
-          const cleanKw = (m.model || m.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
-          res += `${idx + 1}. *${m.name}* (${m.brand.name})\n` +
+          res += `${idx + 1}. *${m.name}*\n` +
             `   • OTR: ${formatRupiah(otr)} | DP Mulai: ${formatRupiah(minDp)}\n` +
-            `   👉 Ketik: *SIMULASI ${cleanKw}*\n\n`;
+            `   👉 Ketik: *SIMULASI ${idx + 1}*\n\n`;
         });
       }
 
-      res += `💡 *Format Perhitungan Manual:*\n` +
-        `Ketik: *SIMULASI <OTR> <DP> <TENOR>*\n` +
-        `_Contoh:_ *SIMULASI 28jt 3jt 35*\n\n` +
+      res += `💡 *Pilihan Format Mudah:*\n` +
+        `• Ketik *SIMULASI <NOMOR>* (contoh: *SIMULASI 2*)\n` +
+        `• Ketik *SIMULASI <NOMOR> <DP>* (contoh: *SIMULASI 2 3jt*)\n` +
+        `• Ketik *SIMULASI <OTR> <DP> <TENOR>* (contoh: *SIMULASI 28jt 3jt 35*)\n\n` +
         `Ketik *SALES* untuk berkonsultasi langsung dengan konsultan kami.`;
 
       return res;
     }
 
-    // 2. Check if input is purely numbers: e.g. "28000000 3000000 35" or "28jt 3jt 35"
+    // 2. Check if input is purely numbers or index:
     const parts = cleaned.split(/\s+/).filter(Boolean);
     const num0 = parseIndonesianNumber(parts[0]);
     const num1 = parts.length > 1 ? parseIndonesianNumber(parts[1]) : null;
     const num2 = parts.length > 2 ? parseIndonesianNumber(parts[2]) : null;
 
+    // Check if parts[0] is manual OTR price (>= 1_000_000)
     if (num0 && num0 >= 1_000_000) {
       const otr = num0;
       const dp = num1 !== null ? num1 : Math.round(otr * 0.1);
@@ -498,80 +556,118 @@ class WhatsAppManager {
       });
     }
 
-    // 3. Otherwise, query motorcycle in catalog by keyword, SKU, or name
+    // 3. Check if parts[0] is an index number from catalog (1 .. allMotors.length)
+    let matchedMotor: any = null;
+    let matchedIndex: number | undefined = undefined;
     let specifiedDp: number | null = null;
     let specifiedTenor: number | null = null;
-    const nameWords: string[] = [];
 
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (part === 'dp' || part === 'uang' || part === 'muka') {
-        if (i + 1 < parts.length) {
-          const nextVal = parseIndonesianNumber(parts[i + 1]);
-          if (nextVal !== null) {
-            specifiedDp = nextVal;
-            i++;
-            continue;
+    const maybeIdx = parseInt(parts[0], 10);
+    if (!isNaN(maybeIdx) && maybeIdx >= 1 && maybeIdx <= allMotors.length && /^\d+$/.test(parts[0])) {
+      matchedMotor = allMotors[maybeIdx - 1];
+      matchedIndex = maybeIdx;
+
+      for (let i = 1; i < parts.length; i++) {
+        const part = parts[i];
+        if (part === 'dp' || part === 'uang' || part === 'muka') {
+          if (i + 1 < parts.length) {
+            const nextVal = parseIndonesianNumber(parts[i + 1]);
+            if (nextVal !== null) {
+              specifiedDp = nextVal;
+              i++;
+              continue;
+            }
           }
-        }
-      } else if (part === 'tenor' || part === 'bulan' || part === 'bln') {
-        if (i + 1 < parts.length) {
-          const nextVal = parseInt(parts[i + 1], 10);
-          if (!isNaN(nextVal) && nextVal >= 6 && nextVal <= 60) {
-            specifiedTenor = nextVal;
-            i++;
-            continue;
-          }
-        }
-      } else {
-        const numVal = parseIndonesianNumber(part);
-        if (numVal !== null) {
-          if (numVal >= 500_000) {
-            specifiedDp = numVal;
-          } else if (numVal >= 6 && numVal <= 60) {
-            specifiedTenor = numVal;
+        } else if (part === 'tenor' || part === 'bulan' || part === 'bln') {
+          if (i + 1 < parts.length) {
+            const nextVal = parseInt(parts[i + 1], 10);
+            if (!isNaN(nextVal) && nextVal >= 6 && nextVal <= 60) {
+              specifiedTenor = nextVal;
+              i++;
+              continue;
+            }
           }
         } else {
-          nameWords.push(part);
+          const numVal = parseIndonesianNumber(part);
+          if (numVal !== null) {
+            if (numVal >= 500_000) {
+              specifiedDp = numVal;
+            } else if (numVal >= 6 && numVal <= 60) {
+              specifiedTenor = numVal;
+            }
+          }
         }
       }
-    }
+    } else {
+      // 4. Otherwise, query motorcycle in catalog by keyword, SKU, or name
+      const nameWords: string[] = [];
 
-    const motorKeyword = nameWords.join(' ').trim();
-    const allMotors = await prisma.motorcycle.findMany({
-      where: { isActive: true },
-      include: { brand: true }
-    });
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part === 'dp' || part === 'uang' || part === 'muka') {
+          if (i + 1 < parts.length) {
+            const nextVal = parseIndonesianNumber(parts[i + 1]);
+            if (nextVal !== null) {
+              specifiedDp = nextVal;
+              i++;
+              continue;
+            }
+          }
+        } else if (part === 'tenor' || part === 'bulan' || part === 'bln') {
+          if (i + 1 < parts.length) {
+            const nextVal = parseInt(parts[i + 1], 10);
+            if (!isNaN(nextVal) && nextVal >= 6 && nextVal <= 60) {
+              specifiedTenor = nextVal;
+              i++;
+              continue;
+            }
+          }
+        } else {
+          const numVal = parseIndonesianNumber(part);
+          if (numVal !== null) {
+            if (numVal >= 500_000) {
+              specifiedDp = numVal;
+            } else if (numVal >= 6 && numVal <= 60) {
+              specifiedTenor = numVal;
+            }
+          } else {
+            nameWords.push(part);
+          }
+        }
+      }
 
-    if (allMotors.length === 0) {
-      return `Saat ini belum ada data motor aktif di katalog dealer kami. Ketik *SALES* untuk info unit dan pemesanan.`;
-    }
+      const motorKeyword = nameWords.join(' ').trim();
+      if (allMotors.length === 0) {
+        return `Saat ini belum ada data motor aktif di katalog dealer kami. Ketik *SALES* untuk info unit dan pemesanan.`;
+      }
 
-    let matchedMotor: any = null;
-    if (motorKeyword) {
-      // Direct substring match
-      matchedMotor = allMotors.find(
-        (m) =>
-          m.sku.toLowerCase() === motorKeyword ||
-          m.name.toLowerCase().includes(motorKeyword) ||
-          m.model.toLowerCase().includes(motorKeyword) ||
-          motorKeyword.includes(m.name.toLowerCase()) ||
-          motorKeyword.includes(m.sku.toLowerCase())
-      );
+      if (motorKeyword) {
+        const foundIdx = allMotors.findIndex(
+          (m) =>
+            m.sku.toLowerCase() === motorKeyword ||
+            m.name.toLowerCase().includes(motorKeyword) ||
+            m.model.toLowerCase().includes(motorKeyword) ||
+            motorKeyword.includes(m.name.toLowerCase()) ||
+            motorKeyword.includes(m.sku.toLowerCase())
+        );
 
-      // Word-by-word fallback match
-      if (!matchedMotor) {
-        for (const w of nameWords) {
-          if (w.length >= 3) {
-            const found = allMotors.find(
-              (m) =>
-                m.name.toLowerCase().includes(w) ||
-                m.model.toLowerCase().includes(w) ||
-                m.brand.name.toLowerCase().includes(w)
-            );
-            if (found) {
-              matchedMotor = found;
-              break;
+        if (foundIdx !== -1) {
+          matchedMotor = allMotors[foundIdx];
+          matchedIndex = foundIdx + 1;
+        } else {
+          for (const w of nameWords) {
+            if (w.length >= 3) {
+              const fIdx = allMotors.findIndex(
+                (m) =>
+                  m.name.toLowerCase().includes(w) ||
+                  m.model.toLowerCase().includes(w) ||
+                  m.brand.name.toLowerCase().includes(w)
+              );
+              if (fIdx !== -1) {
+                matchedMotor = allMotors[fIdx];
+                matchedIndex = fIdx + 1;
+                break;
+              }
             }
           }
         }
@@ -581,9 +677,8 @@ class WhatsAppManager {
     if (!matchedMotor) {
       let failMsg = `Motor dengan kata kunci "${cleaned}" tidak ditemukan di katalog kami.\n\n` +
         `🏍️ *Daftar Motor Yang Tersedia:*\n`;
-      allMotors.slice(0, 5).forEach((m, idx) => {
-        const cleanKw = (m.model || m.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
-        failMsg += `${idx + 1}. *${m.name}* (Ketik: *SIMULASI ${cleanKw}*)\n`;
+      allMotors.slice(0, 6).forEach((m, idx) => {
+        failMsg += `${idx + 1}. *${m.name}* (Ketik: *SIMULASI ${idx + 1}*)\n`;
       });
       failMsg += `\nAtau ketik *KATALOG* untuk melihat semua unit yang tersedia.`;
       return failMsg;
@@ -598,11 +693,11 @@ class WhatsAppManager {
     }
 
     if (finalDp < minDp) {
-      const cleanKw = (matchedMotor.model || matchedMotor.name).replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim().split(' ')[0].toUpperCase();
+      const idxHint = matchedIndex ? ` ${matchedIndex}` : '';
       return `⚠️ *DP Di Bawah Ketentuan Dealer*\n\n` +
         `Motor *${matchedMotor.name}* memiliki ketentuan DP Minimal sebesar *${formatRupiah(minDp)}*.\n` +
         `Silakan masukkan DP minimal ${formatRupiah(minDp)} atau lebih.\n\n` +
-        `Contoh: *SIMULASI ${cleanKw} ${minDp}*`;
+        `Contoh: *SIMULASI${idxHint} ${minDp}*`;
     }
 
     const availableTenors =
@@ -621,6 +716,7 @@ class WhatsAppManager {
     return formatMultiTenorText({
       motorName: matchedMotor.name,
       modelName: matchedMotor.model,
+      motorIndex: matchedIndex,
       brandName: matchedMotor.brand?.name,
       hargaOtr: otr,
       dpAmount: finalDp,

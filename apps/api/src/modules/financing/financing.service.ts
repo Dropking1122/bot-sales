@@ -128,14 +128,16 @@ export async function calculateMultiTenors(
 export function formatMultiTenorText(params: {
   motorName?: string;
   modelName?: string;
+  motorIndex?: number;
   brandName?: string;
   hargaOtr: number;
   dpAmount: number;
   dpPercentage: number;
   options: MultiTenorItem[];
 }): string {
+  const numPrefix = params.motorIndex ? `[No. ${params.motorIndex}] ` : '';
   const title = params.motorName
-    ? `🏍️ *SIMULASI KREDIT ${params.motorName.toUpperCase()}*`
+    ? `🏍️ *SIMULASI KREDIT ${numPrefix}${params.motorName.toUpperCase()}*`
     : `📊 *HASIL SIMULASI KREDIT MOTOR*`;
 
   let text = `${title}\n`;
@@ -152,7 +154,11 @@ export function formatMultiTenorText(params: {
 
   text += `\n_Catatan: Angka di atas estimasi standar dealer. Nilai final dapat bervariasi sesuai promo leasing dan persetujuan survei._\n\n`;
   
-  if (params.motorName || params.modelName) {
+  if (params.motorIndex) {
+    text += `💡 *Ingin coba DP berbeda?*\n` +
+      `Ketik: *SIMULASI ${params.motorIndex} <DP>*\n` +
+      `Contoh: *SIMULASI ${params.motorIndex} 4jt*\n\n`;
+  } else if (params.motorName || params.modelName) {
     const rawKw = params.modelName || params.motorName || '';
     // If motorName starts with "All New Honda " or "New Honda ", strip that
     const cleanKw = rawKw.replace(/^(all\s+new\s+|new\s+)?(honda\s+|yamaha\s+)?/i, '').trim();
@@ -162,7 +168,8 @@ export function formatMultiTenorText(params: {
     text += `💡 *Format Simulasi Manual:* *SIMULASI <OTR> <DP> <TENOR>*\nContoh: *SIMULASI 28jt 3jt 35*\n\n`;
   }
 
-  text += `Ketik *SALES* untuk konsultasi & pengajuan berkas leasing dengan tim konsultan kami! 🙏`;
+  text += `• Ketik *KATALOG* untuk melihat pilihan unit lainnya\n` +
+    `• Ketik *SALES* untuk konsultasi & pengajuan berkas leasing langsung dengan konsultan kami! 🙏`;
 
   return text;
 }
