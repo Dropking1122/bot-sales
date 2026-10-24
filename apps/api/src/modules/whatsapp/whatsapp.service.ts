@@ -5,7 +5,7 @@ import qrcode from 'qrcode';
 import { config } from '../../config/env';
 import { logger } from '../../config/logger';
 import { prisma } from '../../config/db';
-import { normalizePhoneNumber, formatRupiah, WhatsAppStatus } from '@bot-sales/shared';
+import { normalizePhoneNumber, formatRupiah, WhatsAppStatus, isValidPhoneNumber } from '@bot-sales/shared';
 import {
   calculateFinancing,
   calculateMultiTenors,
@@ -119,6 +119,7 @@ class WhatsAppManager {
       this.qrCodeDataUrl = null;
       logger.info('WhatsApp Client is READY and CONNECTED');
       this.updateDbStatus('CONNECTED');
+      this.syncLidContactsToPhone().catch((err) => logger.error({ err }, 'Error during syncLidContactsToPhone'));
     });
 
     this.client.on('disconnected', (reason) => {
@@ -155,6 +156,153 @@ class WhatsAppManager {
     }
   }
 
+  public async resolveLidToPn(lidOrJid: string): Promise<string | null> {
+    if (!this.client || !lidOrJid) return null;
+
+    if (lidOrJid.endsWith('@c.us') || lidOrJid.endsWith('@s.whatsapp.net')) {
+      return lidOrJid.replace('@c.us', '').replace('@s.whatsapp.net', '');
+    }
+
+    if (!lidOrJid.endsWith('@lid') && !lidOrJid.includes('@')) {
+      if (/^628\d{8,12}$/.test(lidOrJid) || /^08\d{8,12}$/.test(lidOrJid)) {
+        return lidOrJid;
+      }
+    }
+
+    const lidJid = lidOrJid.includes('@') ? lidOrJid : `${lidOrJid}@lid`;
+
+    // 1. Try official getContactLidAndPhone
+    try {
+      const res = await this.client.getContactLidAndPhone([lidJid]);
+      if (res && res.length > 0 && res[0].pn) {
+        const cleanPn = res[0].pn.replace('@c.us', '').replace('@s.whatsapp.net', '');
+        if (cleanPn && isValidPhoneNumber(cleanPn)) {
+          logger.info({ lidJid, pn: cleanPn }, 'Resolved LID via getContactLidAndPhone');
+          return cleanPn;
+        }
+      }
+    } catch (err: any) {
+      logger.warn({ errMsg: err?.message, lidJid }, 'getContactLidAndPhone failed');
+    }
+
+    // 2. Try Puppeteer evaluate with internal WhatsApp Web modules
+    try {
+      const page = (this.client as any).pupPage;
+      if (page) {
+        const resolved = await page.evaluate(async (userId: string) => {
+          try {
+            const widFactory = window.require('WAWebWidFactory');
+            const wid = widFactory.createWid(userId);
+
+            // Strategy A: WAWebLidMigrationUtils.toPn
+            try {
+              const { toPn } = window.require('WAWebLidMigrationUtils') || {};
+              if (toPn) {
+                const pnWid = toPn(wid);
+                if (pnWid && pnWid.user && !pnWid.user.includes('@lid')) {
+                  return pnWid.user;
+                }
+              }
+            } catch (e) {}
+
+            // Strategy B: WAWebApiContact getPhoneNumber or getAlternateUserWid
+            try {
+              const contactApi = window.require('WAWebApiContact');
+              if (contactApi) {
+                if (contactApi.getPhoneNumber) {
+                  const pn = contactApi.getPhoneNumber(wid);
+                  if (pn && pn.user) return pn.user;
+                }
+                if (contactApi.getAlternateUserWid) {
+                  const alt = contactApi.getAlternateUserWid(wid);
+                  if (alt && alt.user) return alt.user;
+                }
+              }
+            } catch (e) {}
+
+            // Strategy C: Contact collection lookup
+            try {
+              const collections = window.require('WAWebCollections');
+              if (collections && collections.Contact) {
+                const c = collections.Contact.get(wid);
+                if (c && c.phoneNumber && c.phoneNumber.user) {
+                  return c.phoneNumber.user;
+                }
+              }
+            } catch (e) {}
+          } catch (e) {
+            return null;
+          }
+          return null;
+        }, lidJid);
+
+        if (resolved) {
+          logger.info({ lidJid, pn: resolved }, 'Resolved LID via Puppeteer in-page evaluation');
+          return resolved.replace('@c.us', '').replace('@s.whatsapp.net', '');
+        }
+      }
+    } catch (err: any) {
+      logger.warn({ errMsg: err?.message, lidJid }, 'Puppeteer in-page LID resolution failed');
+    }
+
+    return null;
+  }
+
+  public async syncLidContactsToPhone(): Promise<void> {
+    if (!this.client) return;
+    try {
+      const contacts = await prisma.contact.findMany({
+        where: {
+          OR: [
+            { phone: { contains: '@lid' } },
+            { phoneNormalized: { startsWith: '260' } },
+            { phoneNormalized: { startsWith: '479' } }
+          ]
+        }
+      });
+
+      for (const c of contacts) {
+        const lidJid = c.phone.includes('@') ? c.phone : `${c.phone}@lid`;
+        const realPhone = await this.resolveLidToPn(lidJid);
+        if (realPhone && isValidPhoneNumber(realPhone)) {
+          const normalized = normalizePhoneNumber(realPhone);
+          logger.info({ contactId: c.id, old: c.phone, resolved: realPhone }, 'Synced contact LID to real phone');
+          await prisma.contact.update({
+            where: { id: c.id },
+            data: {
+              phone: realPhone,
+              phoneNormalized: normalized,
+              internalNotes: c.internalNotes ? `${c.internalNotes} [LID: ${lidJid}]` : `[LID: ${lidJid}]`
+            }
+          });
+          await prisma.lead.updateMany({
+            where: { contactId: c.id },
+            data: { phone: normalized }
+          });
+        }
+
+        // Ensure every contact has a Lead
+        const existingLead = await prisma.lead.findFirst({
+          where: { contactId: c.id }
+        });
+        if (!existingLead) {
+          await prisma.lead.create({
+            data: {
+              contactId: c.id,
+              customerName: c.name || 'Prospek WhatsApp',
+              phone: c.phoneNormalized || c.phone,
+              status: 'BARU',
+              notes: 'Inbound chat WhatsApp'
+            }
+          });
+          logger.info({ contactId: c.id, customer: c.name }, 'Created missing lead for existing contact');
+        }
+      }
+    } catch (err: any) {
+      logger.error({ err }, 'Error in syncLidContactsToPhone');
+    }
+  }
+
   public async handleIncomingMessage(msg: WAMessage): Promise<void> {
     // 1. Strictly ignore own messages, status stories, broadcasts, channels (newsletters), and groups
     if (
@@ -178,16 +326,25 @@ class WhatsAppManager {
 
     let targetJid = msg.from;
     let rawPhone = msg.from.replace('@c.us', '');
+    let realPhone: string | null = null;
 
     // If message is from privacy LID, try resolving actual phone number via getContact
     let contactDetail: any = null;
     try {
       contactDetail = await msg.getContact();
       if (contactDetail?.number) {
-        rawPhone = contactDetail.number;
+        realPhone = contactDetail.number;
       }
     } catch (e) {
       // ignore
+    }
+
+    if (!realPhone && (targetJid.endsWith('@lid') || (msg.author && msg.author.endsWith('@lid')))) {
+      realPhone = await this.resolveLidToPn(targetJid);
+    }
+
+    if (realPhone && isValidPhoneNumber(realPhone)) {
+      rawPhone = realPhone;
     }
 
     // Double check that resolved rawPhone or JID is not newsletter
@@ -208,36 +365,58 @@ class WhatsAppManager {
         where: {
           OR: [
             { phoneNormalized: normalizedPhone },
+            { phone: rawPhone },
             { phone: targetJid }
           ]
         }
       });
 
-      if (!contact) {
-        const resolvedName =
-          contactDetail?.pushname ||
-          contactDetail?.name ||
-          (msg as any)._data?.notifyName ||
-          (msg as any).notifyName ||
-          msg.author ||
-          rawPhone;
+      const resolvedName =
+        contactDetail?.pushname ||
+        contactDetail?.name ||
+        (msg as any)._data?.notifyName ||
+        (msg as any).notifyName ||
+        msg.author ||
+        rawPhone;
 
+      if (!contact) {
         contact = await prisma.contact.create({
           data: {
             name: resolvedName,
-            phone: targetJid,
+            phone: rawPhone,
             phoneNormalized: normalizedPhone,
             source: 'WHATSAPP_BOT',
             consentStatus: 'GRANTED',
             consentSource: 'CHAT_INITIATED',
-            consentAt: new Date()
+            consentAt: new Date(),
+            internalNotes: targetJid.endsWith('@lid') ? `[LID: ${targetJid}]` : undefined
           }
         });
-      } else if (contact.phone !== targetJid) {
-        await prisma.contact.update({
-          where: { id: contact.id },
-          data: { phone: targetJid }
-        });
+      } else {
+        const hasLidPhone = contact.phone.includes('@lid') || !isValidPhoneNumber(contact.phone);
+        const canUpgradePhone = realPhone && isValidPhoneNumber(realPhone);
+        const shouldUpdateName = (!contact.name || contact.name === contact.phone) && resolvedName && resolvedName !== rawPhone;
+
+        if (canUpgradePhone || shouldUpdateName) {
+          contact = await prisma.contact.update({
+            where: { id: contact.id },
+            data: {
+              name: shouldUpdateName ? resolvedName : undefined,
+              phone: canUpgradePhone ? rawPhone : undefined,
+              phoneNormalized: canUpgradePhone ? normalizedPhone : undefined,
+              internalNotes: targetJid.endsWith('@lid') && !contact.internalNotes?.includes(targetJid)
+                ? (contact.internalNotes ? `${contact.internalNotes} [LID: ${targetJid}]` : `[LID: ${targetJid}]`)
+                : undefined
+            }
+          });
+
+          if (canUpgradePhone) {
+            await prisma.lead.updateMany({
+              where: { contactId: contact.id },
+              data: { phone: normalizedPhone }
+            });
+          }
+        }
       }
 
       // 2. Get or create Conversation
@@ -270,6 +449,28 @@ class WhatsAppManager {
         where: { id: conversation.id },
         data: { lastMessageAt: new Date() }
       });
+
+      // 2b. Automatically ensure Lead exists for this contact
+      let activeLead = await prisma.lead.findFirst({
+        where: {
+          contactId: contact.id,
+          status: { in: ['BARU', 'DIHUBUNGI'] }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!activeLead) {
+        activeLead = await prisma.lead.create({
+          data: {
+            contactId: contact.id,
+            customerName: contact.name || 'Prospek WhatsApp',
+            phone: contact.phoneNormalized || contact.phone,
+            status: 'BARU',
+            notes: `Inbound chat WhatsApp: "${body.slice(0, 100)}"`
+          }
+        });
+        logger.info({ leadId: activeLead.id, customer: contact.name, phone: contact.phoneNormalized }, 'Lead automatically created for inbound chat');
+      }
 
       // 3. If bot is deactivated (Sales takeover), skip auto-reply
       if (!conversation.isBotActive || conversation.status === 'HANDOFF') {
@@ -373,16 +574,33 @@ class WhatsAppManager {
         data: { isBotActive: false, status: 'HANDOFF' }
       });
 
-      // Also create a lead
-      await prisma.lead.create({
-        data: {
+      // Update or create lead
+      const existingLead = await prisma.lead.findFirst({
+        where: {
           contactId: contact.id,
-          customerName: contact.name,
-          phone: contact.phoneNormalized,
-          status: 'BARU',
-          notes: 'Permintaan pengalihan langsung ke tim sales melalui WhatsApp Bot'
-        }
+          status: { in: ['BARU', 'DIHUBUNGI'] }
+        },
+        orderBy: { createdAt: 'desc' }
       });
+
+      if (existingLead) {
+        await prisma.lead.update({
+          where: { id: existingLead.id },
+          data: {
+            notes: (existingLead.notes ? `${existingLead.notes} | ` : '') + 'Permintaan pengalihan langsung ke tim sales melalui WhatsApp Bot'
+          }
+        });
+      } else {
+        await prisma.lead.create({
+          data: {
+            contactId: contact.id,
+            customerName: contact.name || 'Prospek WhatsApp',
+            phone: contact.phoneNormalized || contact.phone,
+            status: 'BARU',
+            notes: 'Permintaan pengalihan langsung ke tim sales melalui WhatsApp Bot'
+          }
+        });
+      }
 
       return 'Baik, percakapan ini sedang dialihkan ke tim sales kami. Sales konsultan kami akan segera menghubungi Anda langsung. Mohon ditunggu ya! 🙏';
     }
@@ -432,7 +650,27 @@ class WhatsAppManager {
       });
 
       if (idx >= 1 && idx <= allMotors.length) {
-        return await this.formatMotorDetail(allMotors[idx - 1], idx);
+        const selectedMotor = allMotors[idx - 1];
+        try {
+          const lead = await prisma.lead.findFirst({
+            where: {
+              contactId: contact.id,
+              status: { in: ['BARU', 'DIHUBUNGI'] }
+            },
+            orderBy: { createdAt: 'desc' }
+          });
+          if (lead) {
+            await prisma.lead.update({
+              where: { id: lead.id },
+              data: {
+                motorcycleId: selectedMotor.id,
+                notes: `Tertarik pada motor #${idx} ${selectedMotor.name} (OTR: ${formatRupiah(Number(selectedMotor.priceOtr))})`
+              }
+            });
+          }
+        } catch (e) {}
+
+        return await this.formatMotorDetail(selectedMotor, idx);
       }
     }
 
@@ -477,6 +715,25 @@ class WhatsAppManager {
         return `Motor "${query}" tidak ditemukan di katalog kami. Ketik *KATALOG* untuk melihat daftar nomor motor yang tersedia.`;
       }
 
+      try {
+        const lead = await prisma.lead.findFirst({
+          where: {
+            contactId: contact.id,
+            status: { in: ['BARU', 'DIHUBUNGI'] }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (lead) {
+          await prisma.lead.update({
+            where: { id: lead.id },
+            data: {
+              motorcycleId: motor.id,
+              notes: `Menanyakan info motor ${motor.name}`
+            }
+          });
+        }
+      } catch (e) {}
+
       return await this.formatMotorDetail(motor, matchedIndex);
     }
 
@@ -489,7 +746,7 @@ class WhatsAppManager {
       lower.includes('simulasi kredit');
 
     if (isSimulasiTrigger) {
-      return await this.handleSimulationQuery(text);
+      return await this.handleSimulationQuery(text, contact);
     }
 
     // 6. Address & Operating Hours
@@ -590,7 +847,7 @@ class WhatsAppManager {
     };
   }
 
-  private async handleSimulationQuery(rawText: string): Promise<string> {
+  private async handleSimulationQuery(rawText: string, contact?: any): Promise<string> {
     const lower = rawText.toLowerCase().trim();
     // Strip triggers: "simulasi kredit", "simulasi cicilan", "simulasi", "kredit", "cicilan", "angsuran"
     const cleaned = lower
@@ -820,6 +1077,29 @@ class WhatsAppManager {
     }
 
     const multi = await calculateMultiTenors(otr, finalDp, tenorsToRun);
+
+    if (contact && matchedMotor) {
+      try {
+        const lead = await prisma.lead.findFirst({
+          where: {
+            contactId: contact.id,
+            status: { in: ['BARU', 'DIHUBUNGI'] }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (lead) {
+          await prisma.lead.update({
+            where: { id: lead.id },
+            data: {
+              motorcycleId: matchedMotor.id,
+              dpPlanned: finalDp ? Number(finalDp) : undefined,
+              tenorPlanned: specifiedTenor || undefined,
+              notes: `Simulasi kredit: ${matchedMotor.name} (DP ${formatRupiah(finalDp)})`
+            }
+          });
+        }
+      } catch (e) {}
+    }
 
     return formatMultiTenorText({
       motorName: matchedMotor.name,

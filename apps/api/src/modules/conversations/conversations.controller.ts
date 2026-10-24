@@ -88,9 +88,14 @@ export async function sendManualReply(req: Request, res: Response, next: NextFun
       throw new AppError('Tidak dapat mengirim pesan ke Saluran WhatsApp (Channel bersifat siaran satu arah).', 400);
     }
 
-    const recipient = conv.contact.phone && conv.contact.phone.includes('@')
-      ? conv.contact.phone
-      : `${conv.contact.phoneNormalized}@c.us`;
+    const lidMatch = conv.contact.internalNotes?.match(/\[LID:\s*([^\]]+)\]/);
+    const lidJid = lidMatch ? lidMatch[1].trim() : null;
+
+    const recipient =
+      lidJid ||
+      (conv.contact.phone && conv.contact.phone.includes('@')
+        ? conv.contact.phone
+        : `${conv.contact.phoneNormalized}@c.us`);
 
     // Try to send via WhatsApp Web if connected
     let waMessageId: string | undefined;
