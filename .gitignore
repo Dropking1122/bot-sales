@@ -28,6 +28,8 @@ storage/whatsapp-session/*
 !storage/whatsapp-session/.gitkeep
 apps/api/storage/*
 !apps/api/storage/.gitkeep
+.wwebjs_cache/
+apps/api/.wwebjs_cache/
 
 # Logs
 logs/

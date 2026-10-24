@@ -84,15 +84,23 @@ export async function sendManualReply(req: Request, res: Response, next: NextFun
       throw new AppError('Percakapan tidak ditemukan', 404);
     }
 
+    if (conv.contact.phone?.includes('@newsletter') || conv.contact.phoneNormalized?.includes('newsletter')) {
+      throw new AppError('Tidak dapat mengirim pesan ke Saluran WhatsApp (Channel bersifat siaran satu arah).', 400);
+    }
+
+    const recipient = conv.contact.phone && conv.contact.phone.includes('@')
+      ? conv.contact.phone
+      : `${conv.contact.phoneNormalized}@c.us`;
+
     // Try to send via WhatsApp Web if connected
     let waMessageId: string | undefined;
     try {
-      const sent = await sendWhatsAppTextMessage(conv.contact.phoneNormalized, message);
+      const sent = await sendWhatsAppTextMessage(recipient, message.trim());
       if (sent?.id?.id) {
         waMessageId = sent.id.id;
       }
-    } catch (e) {
-      // WA not connected or client offline; still store in database
+    } catch (e: any) {
+      throw new AppError(e?.message || 'Gagal mengirim pesan WhatsApp. Pastikan bot terhubung.', 400);
     }
 
     // Store in DB
@@ -155,7 +163,27 @@ export async function resumeBot(req: Request, res: Response, next: NextFunction)
 
     await logAudit(req, 'RESUME_BOT', 'Conversation', id);
 
-    return res.json({ success: true, message: 'Bot WhatsApp diaktifkan kembali untuk percakapan ini', data: conv });
+    return res.json({ success: true, message: 'Bot diaktifkan kembali untuk percakapan ini', data: conv });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteConversation(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+
+    await prisma.message.deleteMany({
+      where: { conversationId: id }
+    });
+
+    await prisma.conversation.delete({
+      where: { id }
+    });
+
+    await logAudit(req, 'DELETE_CONVERSATION', 'Conversation', id);
+
+    return res.json({ success: true, message: 'Percakapan berhasil dihapus' });
   } catch (err) {
     next(err);
   }

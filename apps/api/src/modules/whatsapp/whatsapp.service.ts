@@ -141,39 +141,87 @@ class WhatsAppManager {
   }
 
   public async handleIncomingMessage(msg: WAMessage): Promise<void> {
-    // Ignore status broadcasts or group messages
-    if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
+    // 1. Strictly ignore own messages, status stories, broadcasts, channels (newsletters), and groups
+    if (
+      msg.fromMe ||
+      msg.isStatus ||
+      msg.broadcast ||
+      msg.from === 'status@broadcast' ||
+      msg.from.includes('@newsletter') ||
+      msg.from.includes('@broadcast') ||
+      msg.from.includes('@g.us') ||
+      (msg.author && (msg.author.includes('@newsletter') || msg.author.includes('@g.us')))
+    ) {
+      return;
+    }
 
-    const rawPhone = msg.from.replace('@c.us', '');
+    // 2. Ignore non-conversational message types
+    const validTypes = ['chat', 'image', 'document', 'audio', 'voice', 'video', 'location', 'buttons_response'];
+    if (msg.type && !validTypes.includes(msg.type)) {
+      return;
+    }
+
+    let targetJid = msg.from;
+    let rawPhone = msg.from.replace('@c.us', '');
+
+    // If message is from privacy LID, try resolving actual phone number via getContact
+    let contactDetail: any = null;
+    try {
+      contactDetail = await msg.getContact();
+      if (contactDetail?.number) {
+        rawPhone = contactDetail.number;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Double check that resolved rawPhone or JID is not newsletter
+    if (rawPhone.includes('newsletter') || targetJid.includes('newsletter')) {
+      return;
+    }
+
     const normalizedPhone = normalizePhoneNumber(rawPhone);
     const body = (msg.body || '').trim();
 
+    if (!body && !msg.hasMedia) {
+      return;
+    }
+
     try {
       // 1. Get or create Contact
-      let contact = await prisma.contact.findUnique({
-        where: { phoneNormalized: normalizedPhone }
+      let contact = await prisma.contact.findFirst({
+        where: {
+          OR: [
+            { phoneNormalized: normalizedPhone },
+            { phone: targetJid }
+          ]
+        }
       });
 
       if (!contact) {
-        let contactPushName: string | null = null;
-        try {
-          const detail = await msg.getContact();
-          contactPushName = detail?.pushname || detail?.name || null;
-        } catch (e) {
-          // ignore
-        }
-        const resolvedName = contactPushName || (msg as any)._data?.notifyName || (msg as any).notifyName || msg.author || rawPhone;
+        const resolvedName =
+          contactDetail?.pushname ||
+          contactDetail?.name ||
+          (msg as any)._data?.notifyName ||
+          (msg as any).notifyName ||
+          msg.author ||
+          rawPhone;
 
         contact = await prisma.contact.create({
           data: {
             name: resolvedName,
-            phone: rawPhone,
+            phone: targetJid,
             phoneNormalized: normalizedPhone,
             source: 'WHATSAPP_BOT',
             consentStatus: 'GRANTED',
             consentSource: 'CHAT_INITIATED',
             consentAt: new Date()
           }
+        });
+      } else if (contact.phone !== targetJid) {
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: { phone: targetJid }
         });
       }
 
@@ -367,12 +415,20 @@ class WhatsAppManager {
       `• *SALES* - Bicara dengan tim sales kami`;
   }
 
-  public async sendMessage(toPhone: string, content: string): Promise<WAMessage | null> {
+  public async sendMessage(toPhoneOrJid: string, content: string): Promise<WAMessage | null> {
     if (!this.client || this.status !== 'CONNECTED') {
       throw new Error('WhatsApp client belum terhubung. Silakan scan QR terlebih dahulu.');
     }
 
-    const chatId = `${toPhone}@c.us`;
+    let chatId = toPhoneOrJid.trim();
+    if (chatId.includes('@newsletter')) {
+      throw new Error('Tidak dapat mengirim pesan ke Saluran WhatsApp (Channel bersifat siaran satu arah).');
+    }
+
+    if (!chatId.includes('@')) {
+      chatId = `${chatId}@c.us`;
+    }
+
     return await this.client.sendMessage(chatId, content);
   }
 
