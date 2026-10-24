@@ -8,7 +8,7 @@ async function main() {
 
   // 1. Super Admin
   const adminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@botsales.local';
-  const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'AdminPassword2026!';
+  const adminPassword = 'Admin123!';
   const adminName = process.env.SUPER_ADMIN_NAME || 'Super Administrator';
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
@@ -144,6 +144,100 @@ async function main() {
     }
   }
   console.log(`✓ Broadcast Templates seeded (${defaultTemplates.length} templates)`);
+
+  // 6. Default Starter Motorcycles
+  const hondaBrand = await prisma.brand.findUnique({ where: { name: 'Honda' } });
+  const yamahaBrand = await prisma.brand.findUnique({ where: { name: 'Yamaha' } });
+
+  const defaultMotors = [
+    {
+      sku: 'HND-BEAT-CBS',
+      name: 'Honda BeAT CBS',
+      brandId: hondaBrand?.id!,
+      model: 'BeAT',
+      year: 2026,
+      category: 'Matic',
+      condition: 'BARU' as any,
+      priceOtr: 18500000,
+      minDp: 1500000,
+      colors: ['Hitam', 'Merah', 'Putih'],
+      stockStatus: 'TERSEDIA' as any,
+      description: 'Motor matic lincah, hemat bahan bakar dengan mesin eSP 110cc.'
+    },
+    {
+      sku: 'HND-VARIO-160',
+      name: 'Honda Vario 160 CBS',
+      brandId: hondaBrand?.id!,
+      model: 'Vario 160',
+      year: 2026,
+      category: 'Matic',
+      condition: 'BARU' as any,
+      priceOtr: 27500000,
+      minDp: 2500000,
+      colors: ['Matte Black', 'Matte Red'],
+      stockStatus: 'TERSEDIA' as any,
+      description: 'Performa mesin 160cc 4-katup eSP+ bertenaga besar dengan desain sporty agresif.'
+    },
+    {
+      sku: 'HND-PCX-160',
+      name: 'Honda PCX 160 CBS',
+      brandId: hondaBrand?.id!,
+      model: 'PCX 160',
+      year: 2026,
+      category: 'Matic Maxi',
+      condition: 'BARU' as any,
+      priceOtr: 33200000,
+      minDp: 3500000,
+      colors: ['Magnificent Red', 'Royal Matte Blue', 'Wonderful White'],
+      stockStatus: 'TERSEDIA' as any,
+      description: 'Skutik premium mewah berkapasitas 160cc dengan bagasi luas 30 liter.'
+    },
+    {
+      sku: 'YMH-NMAX-155',
+      name: 'Yamaha NMAX 155 Connected',
+      brandId: yamahaBrand?.id!,
+      model: 'NMAX 155',
+      year: 2026,
+      category: 'Matic Maxi',
+      condition: 'BARU' as any,
+      priceOtr: 32800000,
+      minDp: 3500000,
+      colors: ['Maxi Signature Black', 'Matte Green', 'Metallic Red'],
+      stockStatus: 'TERSEDIA' as any,
+      description: 'Maxi scooter legendaris dengan teknologi Blue Core 155cc VVA dan Y-Connect.'
+    },
+    {
+      sku: 'YMH-AEROX-155',
+      name: 'Yamaha Aerox 155 Standard',
+      brandId: yamahaBrand?.id!,
+      model: 'Aerox 155',
+      year: 2026,
+      category: 'Matic Maxi',
+      condition: 'BARU' as any,
+      priceOtr: 28200000,
+      minDp: 2800000,
+      colors: ['Cyber City', 'Silver Cyan', 'Yellow'],
+      stockStatus: 'TERSEDIA' as any,
+      description: 'Super Sport Scooter dengan DNA balap Yamaha dan handling presisi.'
+    }
+  ];
+
+  for (const m of defaultMotors) {
+    if (!m.brandId) continue;
+    await prisma.motorcycle.upsert({
+      where: { sku: m.sku },
+      update: {
+        name: m.name,
+        priceOtr: m.priceOtr,
+        minDp: m.minDp,
+        category: m.category,
+        description: m.description,
+        isActive: true
+      },
+      create: m
+    });
+  }
+  console.log(`✓ Default Motorcycles seeded (${defaultMotors.length} units)`);
 
   console.log('Seed completed successfully!');
 }

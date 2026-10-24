@@ -4,7 +4,13 @@ import { config } from '../../config/env';
 import { logger } from '../../config/logger';
 import { prisma } from '../../config/db';
 import { normalizePhoneNumber, formatRupiah, WhatsAppStatus } from '@bot-sales/shared';
-import { calculateFinancing, formatSimulationText } from '../financing/financing.service';
+import {
+  calculateFinancing,
+  calculateMultiTenors,
+  formatMultiTenorText,
+  formatSimulationText,
+  parseIndonesianNumber
+} from '../financing/financing.service';
 
 class WhatsAppManager {
   private client: Client | null = null;
@@ -376,17 +382,20 @@ class WhatsAppManager {
         `💳 *DP Mulai:* ${formatRupiah(minDp)}\n` +
         `📊 *Estimasi Cicilan (35 bln):* ${formatRupiah(sim.monthlyInstallment)}/bln\n\n` +
         `📝 *Deskripsi:*\n${motor.description || '-'}\n\n` +
+        `👉 Ketik: *SIMULASI ${motor.name.split(' ')[0].toUpperCase()}* untuk melihat tabel angsuran lengkap.\n` +
         `Ketik *SALES* untuk terhubung langsung dengan konsultan kami untuk pemesanan!`;
     }
 
-    // 5. Simulation inquiry: "SIMULASI"
-    if (lower.startsWith('simulasi') || lower.startsWith('kredit')) {
-      return `📊 *SIMULASI KREDIT MOTOR*\n\n` +
-        `Untuk simulasi kredit otomatis, ketik:\n` +
-        `*SIMULASI <HARGA_OTR> <DP> <TENOR_BULAN>*\n\n` +
-        `_Contoh:_\n` +
-        `*SIMULASI 27500000 3000000 35*\n\n` +
-        `Atau ketik *SALES* untuk dibantu hitungkan oleh sales kami.`;
+    // 5. Simulation inquiry: "SIMULASI", "KREDIT", "CICILAN", "ANGSURAN"
+    const isSimulasiTrigger =
+      lower.startsWith('simulasi') ||
+      lower.startsWith('kredit') ||
+      lower.startsWith('cicilan') ||
+      lower.startsWith('angsuran') ||
+      lower.includes('simulasi kredit');
+
+    if (isSimulasiTrigger) {
+      return await this.handleSimulationQuery(text);
     }
 
     // 6. Address & Operating Hours
@@ -413,6 +422,212 @@ class WhatsAppManager {
       `• *SIMULASI* - Hitung estimasi kredit\n` +
       `• *LOKASI* - Alamat dealer & jam buka\n` +
       `• *SALES* - Bicara dengan tim sales kami`;
+  }
+
+  private async handleSimulationQuery(rawText: string): Promise<string> {
+    const lower = rawText.toLowerCase().trim();
+    // Strip triggers: "simulasi kredit", "simulasi cicilan", "simulasi", "kredit", "cicilan", "angsuran"
+    const cleaned = lower
+      .replace(/^(simulasi\s+kredit|simulasi\s+cicilan|simulasi|kredit|cicilan|angsuran)\s*/i, '')
+      .trim();
+
+    // 1. If empty query: "SIMULASI" alone
+    if (!cleaned) {
+      const popularMotors = await prisma.motorcycle.findMany({
+        where: { isActive: true },
+        include: { brand: true },
+        take: 5,
+        orderBy: { priceOtr: 'asc' }
+      });
+
+      let res = `📊 *LAYANAN SIMULASI KREDIT DEALER*\n\n` +
+        `Dapatkan rincian angsuran per bulan secara cepat dan transparan!\n\n`;
+
+      if (popularMotors.length > 0) {
+        res += `🏍️ *Pilihan Motor Siap Simulasi:*\n`;
+        popularMotors.forEach((m, idx) => {
+          const otr = Number(m.priceOtr);
+          const minDp = m.minDp ? Number(m.minDp) : Math.round(otr * 0.1);
+          const parts = m.name.split(' ');
+          const keyword = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+          res += `${idx + 1}. *${m.name}* (${m.brand.name})\n` +
+            `   • OTR: ${formatRupiah(otr)} | DP Mulai: ${formatRupiah(minDp)}\n` +
+            `   👉 Ketik: *SIMULASI ${keyword}*\n\n`;
+        });
+      }
+
+      res += `💡 *Format Perhitungan Manual:*\n` +
+        `Ketik: *SIMULASI <OTR> <DP> <TENOR>*\n` +
+        `_Contoh:_ *SIMULASI 28jt 3jt 35*\n\n` +
+        `Ketik *SALES* untuk berkonsultasi langsung dengan konsultan kami.`;
+
+      return res;
+    }
+
+    // 2. Check if input is purely numbers: e.g. "28000000 3000000 35" or "28jt 3jt 35"
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    const num0 = parseIndonesianNumber(parts[0]);
+    const num1 = parts.length > 1 ? parseIndonesianNumber(parts[1]) : null;
+    const num2 = parts.length > 2 ? parseIndonesianNumber(parts[2]) : null;
+
+    if (num0 && num0 >= 1_000_000) {
+      const otr = num0;
+      const dp = num1 !== null ? num1 : Math.round(otr * 0.1);
+
+      if (dp >= otr) {
+        return `⚠️ *Simulasi Ditolak*\n\nUang muka (DP) senilai ${formatRupiah(dp)} tidak boleh sama atau melebihi harga OTR (${formatRupiah(otr)}). Silakan gunakan nominal DP yang lebih kecil.`;
+      }
+
+      let customTenor: number | null = null;
+      if (num2 && num2 >= 6 && num2 <= 60) {
+        customTenor = num2;
+      }
+
+      const tenorsToCalculate = customTenor
+        ? [11, 17, 23, 29, 35].includes(customTenor)
+          ? [11, 17, 23, 29, 35]
+          : [11, 23, customTenor, 35].sort((a, b) => a - b)
+        : [11, 17, 23, 29, 35];
+
+      const multi = await calculateMultiTenors(otr, dp, tenorsToCalculate);
+      return formatMultiTenorText({
+        hargaOtr: otr,
+        dpAmount: dp,
+        dpPercentage: multi.dpPercentage,
+        options: multi.options
+      });
+    }
+
+    // 3. Otherwise, query motorcycle in catalog by keyword, SKU, or name
+    let specifiedDp: number | null = null;
+    let specifiedTenor: number | null = null;
+    const nameWords: string[] = [];
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (part === 'dp' || part === 'uang' || part === 'muka') {
+        if (i + 1 < parts.length) {
+          const nextVal = parseIndonesianNumber(parts[i + 1]);
+          if (nextVal !== null) {
+            specifiedDp = nextVal;
+            i++;
+            continue;
+          }
+        }
+      } else if (part === 'tenor' || part === 'bulan' || part === 'bln') {
+        if (i + 1 < parts.length) {
+          const nextVal = parseInt(parts[i + 1], 10);
+          if (!isNaN(nextVal) && nextVal >= 6 && nextVal <= 60) {
+            specifiedTenor = nextVal;
+            i++;
+            continue;
+          }
+        }
+      } else {
+        const numVal = parseIndonesianNumber(part);
+        if (numVal !== null) {
+          if (numVal >= 500_000) {
+            specifiedDp = numVal;
+          } else if (numVal >= 6 && numVal <= 60) {
+            specifiedTenor = numVal;
+          }
+        } else {
+          nameWords.push(part);
+        }
+      }
+    }
+
+    const motorKeyword = nameWords.join(' ').trim();
+    const allMotors = await prisma.motorcycle.findMany({
+      where: { isActive: true },
+      include: { brand: true }
+    });
+
+    if (allMotors.length === 0) {
+      return `Saat ini belum ada data motor aktif di katalog dealer kami. Ketik *SALES* untuk info unit dan pemesanan.`;
+    }
+
+    let matchedMotor: any = null;
+    if (motorKeyword) {
+      // Direct substring match
+      matchedMotor = allMotors.find(
+        (m) =>
+          m.sku.toLowerCase() === motorKeyword ||
+          m.name.toLowerCase().includes(motorKeyword) ||
+          m.model.toLowerCase().includes(motorKeyword) ||
+          motorKeyword.includes(m.name.toLowerCase()) ||
+          motorKeyword.includes(m.sku.toLowerCase())
+      );
+
+      // Word-by-word fallback match
+      if (!matchedMotor) {
+        for (const w of nameWords) {
+          if (w.length >= 3) {
+            const found = allMotors.find(
+              (m) =>
+                m.name.toLowerCase().includes(w) ||
+                m.model.toLowerCase().includes(w) ||
+                m.brand.name.toLowerCase().includes(w)
+            );
+            if (found) {
+              matchedMotor = found;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!matchedMotor) {
+      let failMsg = `Motor dengan kata kunci "${cleaned}" tidak ditemukan di katalog kami.\n\n` +
+        `🏍️ *Daftar Motor Yang Tersedia:*\n`;
+      allMotors.slice(0, 5).forEach((m, idx) => {
+        const parts = m.name.split(' ');
+        const kw = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+        failMsg += `${idx + 1}. *${m.name}* (Ketik: *SIMULASI ${kw}*)\n`;
+      });
+      failMsg += `\nAtau ketik *KATALOG* untuk melihat semua unit yang tersedia.`;
+      return failMsg;
+    }
+
+    const otr = Number(matchedMotor.priceOtr);
+    const minDp = matchedMotor.minDp ? Number(matchedMotor.minDp) : Math.round(otr * 0.1);
+    const finalDp = specifiedDp !== null ? specifiedDp : minDp;
+
+    if (finalDp >= otr) {
+      return `⚠️ *Uang muka (DP) terlalu besar!*\nDP ${formatRupiah(finalDp)} tidak boleh melebihi atau sama dengan harga OTR ${formatRupiah(otr)}.`;
+    }
+
+    if (finalDp < minDp) {
+      const parts = matchedMotor.name.split(' ');
+      const kw = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+      return `⚠️ *DP Di Bawah Ketentuan Dealer*\n\n` +
+        `Motor *${matchedMotor.name}* memiliki ketentuan DP Minimal sebesar *${formatRupiah(minDp)}*.\n` +
+        `Silakan masukkan DP minimal ${formatRupiah(minDp)} atau lebih.\n\n` +
+        `Contoh: *SIMULASI ${kw} ${minDp}*`;
+    }
+
+    const availableTenors =
+      matchedMotor.availableTenors && matchedMotor.availableTenors.length > 0
+        ? matchedMotor.availableTenors
+        : [11, 17, 23, 29, 35];
+
+    let tenorsToRun = [...availableTenors];
+    if (specifiedTenor && !tenorsToRun.includes(specifiedTenor)) {
+      tenorsToRun.push(specifiedTenor);
+      tenorsToRun.sort((a: number, b: number) => a - b);
+    }
+
+    const multi = await calculateMultiTenors(otr, finalDp, tenorsToRun);
+
+    return formatMultiTenorText({
+      motorName: matchedMotor.name,
+      brandName: matchedMotor.brand?.name,
+      hargaOtr: otr,
+      dpAmount: finalDp,
+      dpPercentage: multi.dpPercentage,
+      options: multi.options
+    });
   }
 
   public async sendMessage(toPhoneOrJid: string, content: string): Promise<WAMessage | null> {
