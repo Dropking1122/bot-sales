@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getSettings, updateSettings, getPublicSettings, uploadLogo, getCategories, addCategory, deleteCategory } from './settings.controller';
+import { getSettings, updateSettings, getPublicSettings, uploadLogo, getCategories, addCategory, deleteCategory, testAiEndpoint } from './settings.controller';
 import { authenticate, requireRoles } from '../../middleware/auth';
 import { uploadImage } from '../../middleware/upload';
 import { AdminRole } from '@prisma/client';
@@ -13,6 +13,7 @@ router.get('/public', getPublicSettings);
 router.get('/', authenticate, getSettings);
 router.patch('/', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), updateSettings);
 router.post('/logo', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), uploadImage.single('logo'), uploadLogo);
+router.post('/test-ai', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), testAiEndpoint);
 
 // Motor categories
 router.get('/categories', authenticate, getCategories);

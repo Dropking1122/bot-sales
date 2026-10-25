@@ -17,12 +17,18 @@ import {
   Trash2,
   Building2,
   Bot,
-  ExternalLink
+  ExternalLink,
+  Sparkles,
+  Key,
+  Cpu,
+  Eye,
+  EyeOff,
+  Play
 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
   const { settings: globalSettings, refreshSettings, updateSettingsState } = useSettings();
-  const [activeTab, setActiveTab] = useState<'web' | 'whatsapp' | 'bot'>('web');
+  const [activeTab, setActiveTab] = useState<'web' | 'whatsapp' | 'bot' | 'ai'>('web');
 
   // WhatsApp State
   const [waStatus, setWaStatus] = useState<any | null>(null);
@@ -44,12 +50,23 @@ export const SettingsPage: React.FC = () => {
     bot_dealer_address: '',
     bot_dealer_phone: '',
     bot_auto_reply: 'true',
-    broadcast_speed_limit: 'conservative'
+    broadcast_speed_limit: 'conservative',
+    ai_agent_enabled: 'true',
+    ai_provider_url: 'http://127.0.0.1:20128/v1',
+    ai_api_key: '',
+    ai_model: 'antigravity',
+    ai_system_prompt: '',
+    ai_temperature: '0.7',
+    ai_max_tokens: '400'
   });
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [testAiLoading, setTestAiLoading] = useState(false);
+  const [testAiResponse, setTestAiResponse] = useState<string | null>(null);
+  const [testAiError, setTestAiError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadWaStatus = async () => {
@@ -120,6 +137,34 @@ export const SettingsPage: React.FC = () => {
       alert(err.message || 'Gagal menyimpan pengaturan');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleTestAi = async () => {
+    setTestAiLoading(true);
+    setTestAiResponse(null);
+    setTestAiError(null);
+
+    try {
+      const res = await apiRequest('/settings/test-ai', {
+        method: 'POST',
+        body: JSON.stringify({
+          providerUrl: settings.ai_provider_url,
+          apiKey: settings.ai_api_key,
+          model: settings.ai_model,
+          systemPrompt: settings.ai_system_prompt
+        })
+      });
+
+      if (res.success && res.reply) {
+        setTestAiResponse(res.reply);
+      } else {
+        setTestAiError(res.error || 'Gagal menerima balasan dari AI');
+      }
+    } catch (err: any) {
+      setTestAiError(err.message || 'Gagal menghubungi endpoint tes AI');
+    } finally {
+      setTestAiLoading(false);
     }
   };
 
@@ -227,6 +272,24 @@ export const SettingsPage: React.FC = () => {
         >
           <Bot className="w-4 h-4" />
           <span>Profil Dealer & Bot</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('ai')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-semibold whitespace-nowrap transition-colors ${
+            activeTab === 'ai'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+              : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <span>AI Agent (9router / LLM)</span>
+          <span
+            className={`w-2 h-2 rounded-full ${
+              settings.ai_agent_enabled === 'true' ? 'bg-emerald-500' : 'bg-slate-400'
+            }`}
+          />
         </button>
       </div>
 
@@ -602,7 +665,263 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: PROFIL DEALER & BOT */}
+      {/* TAB 4: AI AGENT (9ROUTER / LLM) */}
+      {activeTab === 'ai' && (
+        <div className="space-y-6">
+          {/* Main AI Configuration Card */}
+          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-4">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  <span>Integrasi Agent AI WhatsApp</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Menjawab pertanyaan bebas calon pembeli secara cerdas, luwes, dan otomatis berbasis konteks katalog motor
+                </p>
+              </div>
+
+              {/* Toggle Enable */}
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {settings.ai_agent_enabled === 'true' ? 'AI Aktif' : 'AI Nonaktif'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      ai_agent_enabled: settings.ai_agent_enabled === 'true' ? 'false' : 'true'
+                    })
+                  }
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    settings.ai_agent_enabled === 'true' ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      settings.ai_agent_enabled === 'true' ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                Pilihan Cepat Provider AI:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      ai_provider_url: 'http://127.0.0.1:20128/v1',
+                      ai_model: 'antigravity'
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-950/80 dark:hover:bg-blue-900 dark:text-blue-200 text-xs font-medium transition-colors"
+                >
+                  ⚡ 9router Lokal VPS (Port 20128)
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      ai_provider_url: 'https://api.groq.com/openai/v1',
+                      ai_model: 'llama-3.3-70b-versatile'
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 text-xs font-medium transition-colors"
+                >
+                  🚀 Groq Cloud (Super Fast)
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      ai_provider_url: 'https://api.openai.com/v1',
+                      ai_model: 'gpt-4o-mini'
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 dark:text-emerald-200 text-xs font-medium transition-colors"
+                >
+                  🤖 OpenAI Resmi (gpt-4o-mini)
+                </button>
+              </div>
+            </div>
+
+            {/* Provider URL & Model Form */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  AI Provider Base URL *
+                </label>
+                <input
+                  type="text"
+                  value={settings.ai_provider_url || ''}
+                  onChange={(e) => setSettings({ ...settings, ai_provider_url: e.target.value })}
+                  placeholder="http://127.0.0.1:20128/v1"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Format kompatibel OpenAI. Gunakan <code className="text-blue-500">http://127.0.0.1:20128/v1</code> untuk 9router lokal VPS.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Model AI (ID Model) *
+                </label>
+                <input
+                  type="text"
+                  value={settings.ai_model || ''}
+                  onChange={(e) => setSettings({ ...settings, ai_model: e.target.value })}
+                  placeholder="antigravity"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Contoh: <code className="text-blue-500">antigravity</code>, <code className="text-blue-500">qoder</code>, <code className="text-blue-500">Sk/z-ai/glm-5.2:free</code>, <code className="text-blue-500">gpt-4o-mini</code>
+                </span>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  API Key (Otorisasi 9router / Provider)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={settings.ai_api_key || ''}
+                    onChange={(e) => setSettings({ ...settings, ai_api_key: e.target.value })}
+                    placeholder="Masukkan API Key (kosongkan jika menggunakan default environment server)"
+                    className="w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  API Key disimpan terenkripsi di database. Jika dikosongkan, backend otomatis membaca key bawaan server.
+                </span>
+              </div>
+
+              {/* Temperature & Max Tokens */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Temperatur Respons (Kreativitas)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1.5"
+                  value={settings.ai_temperature || '0.7'}
+                  onChange={(e) => setSettings({ ...settings, ai_temperature: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Nilai 0.3 - 0.7 direkomendasikan untuk jawaban sales faktual dan konsisten.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Maksimal Panjang Balasan (Tokens)
+                </label>
+                <input
+                  type="number"
+                  step="50"
+                  min="100"
+                  max="2000"
+                  value={settings.ai_max_tokens || '400'}
+                  onChange={(e) => setSettings({ ...settings, ai_max_tokens: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  400 tokens setara ± 200-250 kata (pas untuk balon chat WhatsApp agar tidak kepanjangan).
+                </span>
+              </div>
+
+              {/* System Prompt */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Instruksi Sistem & Persona Sales AI (System Prompt)
+                </label>
+                <textarea
+                  rows={5}
+                  value={settings.ai_system_prompt || ''}
+                  onChange={(e) => setSettings({ ...settings, ai_system_prompt: e.target.value })}
+                  placeholder="Anda adalah Vina, konsultan sales dealer motor Honda yang ramah, sopan, dan persuasif. Berikan penjelasan singkat mengenai keunggulan motor, harga OTR, dan rekomendasi cicilan..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  💡 *Catatan:* Data seluruh motor (OTR, DP, CC), jam buka dealer, dan riwayat chat 6 pesan terakhir otomatis disuntikkan oleh sistem ke dalam prompt setiap kali pesan masuk.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Test AI Connection Card */}
+          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Play className="w-4 h-4 text-emerald-500" />
+                  <span>Uji Coba Koneksi AI Agent</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Kirimkan prompt uji coba ke provider 9router untuk memastikan koneksi dan respon AI aktif dengan baik
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestAi}
+                disabled={testAiLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm disabled:opacity-50 transition-colors"
+              >
+                {testAiLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                <span>{testAiLoading ? 'Menghubungi AI...' : 'Tes Respons AI'}</span>
+              </button>
+            </div>
+
+            {testAiError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                <div>
+                  <span className="font-semibold block">Gagal terhubung ke AI:</span>
+                  <span className="font-mono text-[11px] break-all">{testAiError}</span>
+                </div>
+              </div>
+            )}
+
+            {testAiResponse && (
+              <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Koneksi Berhasil! Contoh Balasan dari Model:</span>
+                </div>
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-900 text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed shadow-inner">
+                  {testAiResponse}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {activeTab === 'bot' && (
         <div className="space-y-6">
           <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">

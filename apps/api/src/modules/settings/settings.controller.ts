@@ -162,3 +162,13 @@ export async function deleteCategory(req: Request, res: Response, next: NextFunc
     return res.json({ success: true, data: list });
   } catch (err) { next(err); }
 }
+
+export async function testAiEndpoint(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { testAiAgent } = await import('../ai/ai.service');
+    const result = await testAiAgent(req.body);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}

@@ -262,6 +262,10 @@ class WhatsAppManager {
       });
 
       for (const c of contacts) {
+        let effectiveContactId = c.id;
+        let effectiveName = c.name;
+        let effectivePhone = c.phoneNormalized;
+
         try {
           const lidJid = c.phone.includes('@') ? c.phone : `${c.phone}@lid`;
           const realPhone = await this.resolveLidToPn(lidJid);
@@ -278,6 +282,10 @@ class WhatsAppManager {
             });
 
             if (existingWithSamePhone) {
+              effectiveContactId = existingWithSamePhone.id;
+              effectiveName = existingWithSamePhone.name;
+              effectivePhone = existingWithSamePhone.phoneNormalized;
+
               // Merge note into existing contact and remove duplicate LID placeholder
               const notesToAdd = `[LID: ${lidJid}]`;
               await prisma.contact.update({
@@ -298,6 +306,7 @@ class WhatsAppManager {
               });
               await prisma.contact.delete({ where: { id: c.id } }).catch(() => {});
             } else {
+              effectivePhone = normalized;
               await prisma.contact.update({
                 where: { id: c.id },
                 data: {
@@ -319,21 +328,21 @@ class WhatsAppManager {
         // Ensure every contact has a Lead
         try {
           const existingLead = await prisma.lead.findFirst({
-            where: { contactId: c.id }
+            where: { contactId: effectiveContactId }
           });
           if (!existingLead) {
             await prisma.lead.create({
               data: {
-                contactId: c.id,
-                customerName: c.name,
-                phone: c.phoneNormalized,
+                contactId: effectiveContactId,
+                customerName: effectiveName,
+                phone: effectivePhone,
                 status: 'BARU',
                 notes: 'Auto-created from contact sync'
               }
             });
           }
         } catch (leadErr) {
-          // Ignore duplicate lead
+          logger.warn({ leadErr, contactId: effectiveContactId }, 'Non-fatal error creating initial lead during sync');
         }
       }
     } catch (err: any) {
@@ -801,7 +810,26 @@ class WhatsAppManager {
         `Silakan kunjungi showroom kami untuk melihat langsung unit impian Anda!`;
     }
 
-    // 7. Default greeting & fallback
+    // 7. Check if AI Agent should handle this query
+    try {
+      const history = await prisma.message.findMany({
+        where: { conversation: { contactId: contact.id } },
+        orderBy: { createdAt: 'desc' },
+        take: 6,
+        select: { senderType: true, content: true }
+      });
+      history.reverse();
+
+      const { askSalesAiAgent } = await import('../ai/ai.service');
+      const aiReply = await askSalesAiAgent(text, contact, history);
+      if (aiReply) {
+        return aiReply;
+      }
+    } catch (aiErr) {
+      logger.warn({ aiErr }, 'AI Agent fallback to greeting menu');
+    }
+
+    // 8. Default greeting & fallback
     const greetingSetting = await prisma.botSetting.findUnique({ where: { key: 'bot_greeting' } });
     return greetingSetting?.value ||
       `Halo Kak ${contact.name}! Selamat datang di dealer motor kami 🏍️\n\n` +
