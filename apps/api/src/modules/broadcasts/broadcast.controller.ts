@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/db';
-import { BroadcastCampaignSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from '@bot-sales/shared';
+import { BroadcastCampaignSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, isValidPhoneNumber } from '@bot-sales/shared';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
 import { resolveBroadcastRecipients, interpolateTemplate } from './broadcast.service';
@@ -110,11 +110,16 @@ export async function createCampaign(req: Request, res: Response, next: NextFunc
       // Prepare recipients with personalized message snapshot and idempotency key
       for (const r of recipients) {
         const personalized = await interpolateTemplate(data.messageTemplate, r, motorcycle);
+        const resolvedPhone =
+          isValidPhoneNumber(r.phoneNormalized)
+            ? r.phoneNormalized
+            : (r.phone && !r.phone.includes('@lid') ? r.phone : r.phoneNormalized);
+
         await tx.broadcastRecipient.create({
           data: {
             campaignId: camp.id,
             contactId: r.id,
-            phone: r.phoneNormalized,
+            phone: resolvedPhone,
             personalizedMessage: personalized,
             status: 'PENDING',
             idempotencyKey: `${camp.id}_${r.id}`
@@ -246,6 +251,72 @@ export async function cancelCampaign(req: Request, res: Response, next: NextFunc
     await logAudit(req, 'CANCEL_CAMPAIGN', 'BroadcastCampaign', id);
 
     return res.json({ success: true, message: 'Kampanye berhasil dibatalkan' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function retryCampaign(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+
+    const campaign = await prisma.broadcastCampaign.findUnique({
+      where: { id },
+      include: {
+        recipients: {
+          where: { status: 'FAILED' },
+          include: { contact: true }
+        }
+      }
+    });
+
+    if (!campaign) {
+      throw new AppError('Kampanye tidak ditemukan', 404);
+    }
+
+    if (campaign.status === 'RUNNING') {
+      throw new AppError('Kampanye sedang berjalan', 400);
+    }
+
+    if (campaign.recipients.length === 0) {
+      throw new AppError('Tidak ada penerima yang berstatus gagal untuk dikirim ulang', 400);
+    }
+
+    // Reset failed recipients to PENDING with refreshed phone number
+    for (const r of campaign.recipients) {
+      const refreshedPhone =
+        r.contact?.phoneNormalized && isValidPhoneNumber(r.contact.phoneNormalized)
+          ? r.contact.phoneNormalized
+          : r.phone;
+
+      await prisma.broadcastRecipient.update({
+        where: { id: r.id },
+        data: {
+          status: 'PENDING',
+          phone: refreshedPhone,
+          errorMessage: null,
+          failedAt: null
+        }
+      });
+    }
+
+    await prisma.broadcastCampaign.update({
+      where: { id },
+      data: {
+        status: 'RUNNING',
+        failedCount: 0,
+        completedAt: null
+      }
+    });
+
+    await logAudit(req, 'RETRY_CAMPAIGN', 'BroadcastCampaign', id, {
+      retriedRecipients: campaign.recipients.length
+    });
+
+    return res.json({
+      success: true,
+      message: `Mengulang pengiriman ${campaign.recipients.length} penerima yang gagal`
+    });
   } catch (err) {
     next(err);
   }

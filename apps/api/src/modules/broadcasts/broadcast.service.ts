@@ -44,7 +44,9 @@ export async function resolveBroadcastRecipients(filter: RecipientFilter) {
     select: {
       id: true,
       name: true,
+      phone: true,
       phoneNormalized: true,
+      internalNotes: true,
       interestedMotorcycle: true
     }
   });

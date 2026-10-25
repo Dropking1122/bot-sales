@@ -1113,21 +1113,97 @@ class WhatsAppManager {
     });
   }
 
-  public async sendMessage(toPhoneOrJid: string, content: string): Promise<WAMessage | null> {
+  public resolveLocalMediaPath(relOrAbsUrl?: string | null): string | null {
+    if (!relOrAbsUrl) return null;
+    if (fs.existsSync(relOrAbsUrl)) return relOrAbsUrl;
+
+    const filename = path.basename(relOrAbsUrl);
+    const candidates = [
+      path.join(config.storage.uploadsDir, 'motorcycles', filename),
+      path.join(config.storage.uploadsDir, filename),
+      path.resolve(config.storage.baseDir, relOrAbsUrl.replace(/^\/storage\/?/, '')),
+      path.resolve('/root/bot-sales/storage/uploads/motorcycles', filename),
+      path.join(process.cwd(), relOrAbsUrl),
+      path.resolve(process.cwd(), '../../', relOrAbsUrl.replace(/^\//, ''))
+    ];
+
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) {
+        return cand;
+      }
+    }
+    return null;
+  }
+
+  public normalizeChatJid(toPhoneOrJid: string): string {
+    let chatId = toPhoneOrJid.trim();
+    if (chatId.includes('@')) return chatId;
+
+    // If it looks like a WhatsApp LID (14-16 digits, or starts with 479/260) and is not a valid phone number
+    if (!isValidPhoneNumber(chatId) && (/^\d{14,16}$/.test(chatId) || chatId.startsWith('260') || chatId.startsWith('479'))) {
+      return `${chatId}@lid`;
+    }
+
+    const normalized = normalizePhoneNumber(chatId);
+    return `${normalized || chatId}@c.us`;
+  }
+
+  public async sendMessage(
+    toPhoneOrJid: string,
+    content: string,
+    options?: {
+      fallbackJid?: string | null;
+      mediaUrl?: string | null;
+      mediaPath?: string | null;
+    }
+  ): Promise<WAMessage | null> {
     if (!this.client || this.status !== 'CONNECTED') {
       throw new Error('WhatsApp client belum terhubung. Silakan scan QR terlebih dahulu.');
     }
 
-    let chatId = toPhoneOrJid.trim();
-    if (chatId.includes('@newsletter')) {
+    let primaryJid = this.normalizeChatJid(toPhoneOrJid);
+    if (primaryJid.includes('@newsletter')) {
       throw new Error('Tidak dapat mengirim pesan ke Saluran WhatsApp (Channel bersifat siaran satu arah).');
     }
 
-    if (!chatId.includes('@')) {
-      chatId = `${chatId}@c.us`;
-    }
+    const trySend = async (targetJid: string): Promise<WAMessage | null> => {
+      let mediaPath = options?.mediaPath;
+      if (!mediaPath && options?.mediaUrl) {
+        mediaPath = this.resolveLocalMediaPath(options.mediaUrl);
+      }
 
-    return await this.client.sendMessage(chatId, content);
+      if (mediaPath && fs.existsSync(mediaPath)) {
+        try {
+          const media = MessageMedia.fromFilePath(mediaPath);
+          return await this.client!.sendMessage(targetJid, media, { caption: content });
+        } catch (mediaErr: any) {
+          logger.warn({ err: mediaErr?.message, targetJid }, 'Failed to send media in sendMessage, falling back to text');
+          let textWithLink = content;
+          if (options?.mediaUrl) {
+            textWithLink = `📷 *Lampiran Foto:*\nhttps://m.revd.dev${options.mediaUrl}\n\n` + content;
+          }
+          return await this.client!.sendMessage(targetJid, textWithLink);
+        }
+      }
+
+      return await this.client!.sendMessage(targetJid, content);
+    };
+
+    try {
+      return await trySend(primaryJid);
+    } catch (primaryErr: any) {
+      logger.warn({ errMsg: primaryErr?.message, primaryJid }, 'Primary sendMessage attempt failed');
+
+      if (options?.fallbackJid) {
+        const fallback = this.normalizeChatJid(options.fallbackJid);
+        if (fallback !== primaryJid) {
+          logger.info({ fallback, primaryJid }, 'Retrying sendMessage with fallback JID');
+          return await trySend(fallback);
+        }
+      }
+
+      throw primaryErr;
+    }
   }
 
   public async disconnect(): Promise<void> {
@@ -1148,6 +1224,10 @@ class WhatsAppManager {
 
 export const waManager = new WhatsAppManager();
 
-export async function sendWhatsAppTextMessage(phone: string, text: string) {
-  return waManager.sendMessage(phone, text);
+export async function sendWhatsAppTextMessage(
+  phone: string,
+  text: string,
+  options?: { fallbackJid?: string | null; mediaUrl?: string | null; mediaPath?: string | null }
+) {
+  return waManager.sendMessage(phone, text, options);
 }

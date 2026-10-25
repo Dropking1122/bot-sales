@@ -7,6 +7,7 @@ import {
   startCampaign,
   pauseCampaign,
   cancelCampaign,
+  retryCampaign,
   getCampaignRecipients,
   exportCampaignReport,
   listTemplates,
@@ -32,6 +33,7 @@ router.get('/:id', authenticate, getCampaignById);
 router.post('/:id/start', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), startCampaign);
 router.post('/:id/pause', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), pauseCampaign);
 router.post('/:id/cancel', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), cancelCampaign);
+router.post('/:id/retry', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), retryCampaign);
 router.get('/:id/recipients', authenticate, getCampaignRecipients);
 router.get('/:id/report', authenticate, exportCampaignReport);
 

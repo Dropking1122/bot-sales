@@ -1,6 +1,7 @@
 import { prisma } from '../config/db';
 import { logger } from '../config/logger';
 import { waManager, sendWhatsAppTextMessage } from '../modules/whatsapp/whatsapp.service';
+import { isValidPhoneNumber } from '@bot-sales/shared';
 
 let isWorkerRunning = false;
 
@@ -33,15 +34,22 @@ export function startBroadcastWorker() {
       const pendingRecipient = activeCampaign.recipients[0];
 
       if (!pendingRecipient) {
-        // All recipients processed! Mark campaign COMPLETED
+        // All recipients processed! Compute final stats
+        const [finalSent, finalFailed] = await Promise.all([
+          prisma.broadcastRecipient.count({ where: { campaignId: activeCampaign.id, status: 'SENT' } }),
+          prisma.broadcastRecipient.count({ where: { campaignId: activeCampaign.id, status: 'FAILED' } })
+        ]);
+
         await prisma.broadcastCampaign.update({
           where: { id: activeCampaign.id },
           data: {
-            status: 'COMPLETED',
+            status: finalSent === 0 && finalFailed > 0 ? 'FAILED' : 'COMPLETED',
+            sentCount: finalSent,
+            failedCount: finalFailed,
             completedAt: new Date()
           }
         });
-        logger.info(`Campaign ${activeCampaign.name} (${activeCampaign.id}) COMPLETED.`);
+        logger.info(`Campaign ${activeCampaign.name} (${activeCampaign.id}) finished (Sent: ${finalSent}, Failed: ${finalFailed}).`);
         setTimeout(loop, 2000);
         return;
       }
@@ -85,13 +93,31 @@ export function startBroadcastWorker() {
         data: { status: 'SENDING' }
       });
 
+      // Resolve best target phone & fallback LID
+      const contact = pendingRecipient.contact;
+      let targetPhone = pendingRecipient.phone;
+      let fallbackJid: string | null = null;
+
+      const lidMatch = contact?.internalNotes?.match(/\[LID:\s*([^\]]+)\]/);
+      const recordedLid = lidMatch ? lidMatch[1].trim() : (contact?.phone?.includes('@lid') ? contact.phone : null);
+
+      if (contact?.phoneNormalized && isValidPhoneNumber(contact.phoneNormalized)) {
+        targetPhone = contact.phoneNormalized;
+        fallbackJid = recordedLid;
+      } else if (recordedLid) {
+        targetPhone = recordedLid;
+      }
+
       // Send via WhatsApp Web
       const messageText = pendingRecipient.personalizedMessage || activeCampaign.messageTemplate;
       let sentSuccess = false;
       let sendError: string | null = null;
 
       try {
-        await sendWhatsAppTextMessage(pendingRecipient.phone, messageText);
+        await sendWhatsAppTextMessage(targetPhone, messageText, {
+          fallbackJid,
+          mediaUrl: activeCampaign.mediaUrl
+        });
         sentSuccess = true;
       } catch (err: any) {
         sendError = err.message || 'Gagal mengirim pesan WhatsApp';
@@ -102,8 +128,10 @@ export function startBroadcastWorker() {
         await prisma.broadcastRecipient.update({
           where: { id: pendingRecipient.id },
           data: {
+            phone: targetPhone,
             status: 'SENT',
-            sentAt: new Date()
+            sentAt: new Date(),
+            errorMessage: null
           }
         });
 
@@ -115,6 +143,7 @@ export function startBroadcastWorker() {
         await prisma.broadcastRecipient.update({
           where: { id: pendingRecipient.id },
           data: {
+            phone: targetPhone,
             status: 'FAILED',
             failedAt: new Date(),
             errorMessage: sendError,

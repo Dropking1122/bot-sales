@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  RotateCcw,
   X,
   Loader2,
   Eye
@@ -107,7 +108,7 @@ export const BroadcastsPage: React.FC = () => {
     }
   };
 
-  const handleAction = async (id: string, action: 'start' | 'pause' | 'cancel') => {
+  const handleAction = async (id: string, action: 'start' | 'pause' | 'cancel' | 'retry') => {
     try {
       await apiRequest(`/broadcasts/${id}/${action}`, { method: 'POST' });
       loadCampaigns();
@@ -134,6 +135,7 @@ export const BroadcastsPage: React.FC = () => {
       case 'PAUSED':
         return 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300';
       case 'CANCELLED':
+      case 'FAILED':
         return 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300';
       default:
         return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300';
@@ -253,6 +255,16 @@ export const BroadcastsPage: React.FC = () => {
                               className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950 dark:text-rose-300"
                             >
                               <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          ) : null}
+
+                          {c.failedCount > 0 && (c.status === 'COMPLETED' || c.status === 'FAILED' || c.status === 'PAUSED') ? (
+                            <button
+                              onClick={() => handleAction(c.id, 'retry')}
+                              title="Kirim Ulang Penerima Gagal"
+                              className="p-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-950 dark:text-orange-300"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
                             </button>
                           ) : null}
 
