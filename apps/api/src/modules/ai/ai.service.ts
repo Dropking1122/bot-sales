@@ -21,7 +21,8 @@ Tugas Anda:
 3. Menjelaskan keunggulan motor (irit bahan bakar, bagasi luas, fitur smart key, CBS/ABS, dll.) secara ringkas dan meyakinkan.
 4. Gaya komunikasi: Santun, ramah Indonesia (gunakan sapaan "Kak" atau sebut nama customer), singkat, padat (maksimal 2-3 paragraf pendek agar nyaman dibaca di WhatsApp), dan komunikatif.
 5. Bila pelanggan menanyakan simulasi kredit terperinci, anjurkan mengetik format mudah "SIMULASI <nomor motor>" atau tawarkan bantuan untuk disambungkan langsung dengan tim sales kami (ketik "SALES").
-6. Jangan mengarang harga atau promo yang tidak ada pada daftar katalog resmi dealer.`;
+6. Jangan mengarang harga atau promo yang tidak ada pada daftar katalog resmi dealer.
+7. Bila pelanggan meminta melihat foto/gambar unit motor (contoh: "bisa kirim fotonya?", "ada gambar Beat?"), atau Anda merekomendasikan unit tertentu dan ingin memperlihatkan fotonya, sertakan tag [FOTO: nama motor] di baris pertama balasan Anda (contoh: [FOTO: All New Honda BeAT]). Sistem WhatsApp akan otomatis melampirkan foto resmi motor tersebut dari database dealer.`;
 
 const DEFAULT_CUSTOM_FAQ = `[Syarat Berkas Kredit]
 Q: Apa saja syarat pengajuan kredit motor Honda?

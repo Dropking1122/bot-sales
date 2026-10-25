@@ -823,7 +823,52 @@ class WhatsAppManager {
       const { askSalesAiAgent } = await import('../ai/ai.service');
       const aiReply = await askSalesAiAgent(text, contact, history);
       if (aiReply) {
-        return aiReply;
+        let cleanAiReply = aiReply;
+        let targetMotorName: string | null = null;
+
+        // Check if AI explicitly tagged a photo: [FOTO: nama_motor] or [GAMBAR: nama_motor]
+        const tagMatch = aiReply.match(/\[(?:FOTO|GAMBAR):\s*([^\]]+)\]/i);
+        if (tagMatch) {
+          targetMotorName = tagMatch[1].trim();
+          cleanAiReply = aiReply.replace(/\[(?:FOTO|GAMBAR):\s*[^\]]+\]/gi, '').trim();
+        }
+
+        // Also check if customer message explicitly asked for a photo/picture
+        const wantsPhoto = /foto|gambar|pic|penampakan|liat|lihat|spill|bentuk/i.test(text);
+        if (!targetMotorName && wantsPhoto) {
+          const matchedInUserMsg = await this.findMotorcycleFromText(text);
+          if (matchedInUserMsg) {
+            targetMotorName = matchedInUserMsg.name;
+          } else if (contact.interestedMotorcycle) {
+            const matchedInInterest = await this.findMotorcycleFromText(contact.interestedMotorcycle);
+            if (matchedInInterest) {
+              targetMotorName = matchedInInterest.name;
+            }
+          } else {
+            // Check if AI mentioned a motorcycle in its answer
+            const matchedInAi = await this.findMotorcycleFromText(cleanAiReply);
+            if (matchedInAi) {
+              targetMotorName = matchedInAi.name;
+            }
+          }
+        }
+
+        if (targetMotorName) {
+          const motor = await this.findMotorcycleFromText(targetMotorName);
+          if (motor) {
+            const photo = this.getMotorcyclePhoto(motor);
+            if (photo.mediaPath) {
+              return {
+                text: cleanAiReply,
+                mediaPath: photo.mediaPath,
+                mediaUrl: photo.mediaUrl,
+                mediaType: 'image/png'
+              };
+            }
+          }
+        }
+
+        return cleanAiReply;
       }
     } catch (aiErr) {
       logger.warn({ aiErr }, 'AI Agent fallback to greeting menu');
@@ -838,6 +883,71 @@ class WhatsAppManager {
       `• *SIMULASI* - Hitung estimasi kredit\n` +
       `• *LOKASI* - Alamat dealer & jam buka\n` +
       `• *SALES* - Bicara dengan tim sales kami`;
+  }
+
+  private getMotorcyclePhoto(motor: any): { mediaPath?: string; mediaUrl?: string } {
+    if (!motor || !motor.images || motor.images.length === 0) {
+      return {};
+    }
+    const relUrl = motor.images[0].url;
+    const filename = path.basename(relUrl);
+
+    const candidates = [
+      path.join(config.storage.uploadsDir, 'motorcycles', filename),
+      path.join(config.storage.uploadsDir, filename),
+      path.resolve(config.storage.baseDir, relUrl.replace(/^\/storage\/?/, '')),
+      path.resolve('/root/bot-sales/storage/uploads/motorcycles', filename),
+      path.join(process.cwd(), relUrl),
+      path.resolve(process.cwd(), '../../', relUrl.replace(/^\//, ''))
+    ];
+
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) {
+        return { mediaPath: cand, mediaUrl: relUrl };
+      }
+    }
+    return { mediaUrl: relUrl };
+  }
+
+  private async findMotorcycleFromText(query: string): Promise<any | null> {
+    if (!query) return null;
+    const motors = await prisma.motorcycle.findMany({
+      where: { isActive: true },
+      include: { brand: true, images: true }
+    });
+
+    const lower = query.toLowerCase();
+
+    // 1. Direct name or model match
+    for (const m of motors) {
+      const name = m.name.toLowerCase();
+      const model = (m.model || '').toLowerCase();
+      if (lower.includes(name) || (model && lower.includes(model))) {
+        return m;
+      }
+    }
+
+    // 2. Specific multi-word keywords first, then single-word
+    const keywords = [
+      'beat street', 'beat', 'vario 160', 'vario 125', 'vario',
+      'scoopy', 'pcx 160', 'pcx', 'adv 160', 'adv', 'stylo 160', 'stylo',
+      'genio', 'forza', 'em1', 'cbr250rr', 'cbr150r', 'cbr',
+      'cb150r', 'cb150x', 'verza', 'crf150l', 'crf',
+      'supra gtr', 'supra x', 'supra', 'sonic', 'revo'
+    ];
+
+    for (const kw of keywords) {
+      if (lower.includes(kw)) {
+        const found = motors.find(
+          (m) =>
+            m.name.toLowerCase().includes(kw) ||
+            (m.model && m.model.toLowerCase().includes(kw))
+        );
+        if (found) return found;
+      }
+    }
+
+    return null;
   }
 
   private async formatMotorDetail(motor: any, index?: number): Promise<BotResponsePayload> {
@@ -878,36 +988,13 @@ class WhatsAppManager {
     res += `• Ketik *KATALOG* : Kembali ke daftar motor\n` +
       `• Ketik *SALES* : Konsultasi langsung dengan konsultan kami`;
 
-    // Locate primary photo
-    let mediaPath: string | undefined = undefined;
-    let mediaUrl: string | undefined = undefined;
-
-    if (motor.images && motor.images.length > 0) {
-      const relUrl = motor.images[0].url;
-      mediaUrl = relUrl;
-      const filename = path.basename(relUrl);
-
-      const candidates = [
-        path.join(config.storage.uploadsDir, 'motorcycles', filename),
-        path.join(config.storage.uploadsDir, filename),
-        path.resolve(config.storage.baseDir, relUrl.replace(/^\/storage\/?/, '')),
-        path.resolve('/root/bot-sales/storage/uploads/motorcycles', filename),
-        path.join(process.cwd(), relUrl),
-        path.resolve(process.cwd(), '../../', relUrl.replace(/^\//, ''))
-      ];
-
-      for (const cand of candidates) {
-        if (fs.existsSync(cand)) {
-          mediaPath = cand;
-          break;
-        }
-      }
-    }
+    // Locate primary photo using reusable helper
+    const photo = this.getMotorcyclePhoto(motor);
 
     return {
       text: res,
-      mediaPath,
-      mediaUrl,
+      mediaPath: photo.mediaPath,
+      mediaUrl: photo.mediaUrl,
       mediaType: 'image/png'
     };
   }
