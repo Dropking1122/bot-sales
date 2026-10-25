@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../lib/api';
-import { Bike, Plus, Search, Filter, Trash2, Edit, Image, Check, AlertCircle, X, Loader2, Tag, Layers } from 'lucide-react';
+import { Bike, Plus, Search, Filter, Trash2, Edit, Image, Check, AlertCircle, X, Loader2, Tag, Layers, Palette } from 'lucide-react';
 
 export const MotorcyclesPage: React.FC = () => {
   const [motorcycles, setMotorcycles] = useState<any[]>([]);
@@ -25,6 +25,8 @@ export const MotorcyclesPage: React.FC = () => {
   const [formMinDp, setFormMinDp] = useState('');
   const [formStockStatus, setFormStockStatus] = useState('TERSEDIA');
   const [formDescription, setFormDescription] = useState('');
+  const [formColors, setFormColors] = useState<string[]>([]);
+  const [newColorInput, setNewColorInput] = useState('');
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -34,6 +36,7 @@ export const MotorcyclesPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [modalColorName, setModalColorName] = useState<string>('');
   const [customColorText, setCustomColorText] = useState<string>('');
+  const [modalAddColorText, setModalAddColorText] = useState<string>('');
   const [isReplaceImage, setIsReplaceImage] = useState<boolean>(false);
   const [formImageFile, setFormImageFile] = useState<File | null>(null);
   const [formImagePreview, setFormImagePreview] = useState<string | null>(null);
@@ -103,6 +106,8 @@ export const MotorcyclesPage: React.FC = () => {
     setFormMinDp('');
     setFormStockStatus('TERSEDIA');
     setFormDescription('');
+    setFormColors([]);
+    setNewColorInput('');
     setFormError(null);
     setFormImageFile(null);
     setFormImagePreview(null);
@@ -123,6 +128,8 @@ export const MotorcyclesPage: React.FC = () => {
     setFormMinDp(m.minDp !== null && m.minDp !== undefined ? String(m.minDp) : '');
     setFormStockStatus(m.stockStatus || 'TERSEDIA');
     setFormDescription(m.description || '');
+    setFormColors(m.colors || []);
+    setNewColorInput('');
     setFormError(null);
     setFormImageFile(null);
     setFormImagePreview(null);
@@ -147,6 +154,7 @@ export const MotorcyclesPage: React.FC = () => {
         priceOtr: Number(formPriceOtr),
         minDp: formMinDp ? Number(formMinDp) : null,
         description: formDescription.trim(),
+        colors: formColors,
         stockStatus: formStockStatus,
         isActive: true
       };
@@ -281,6 +289,43 @@ export const MotorcyclesPage: React.FC = () => {
       loadData();
     } catch (err: any) {
       alert(err.message || 'Gagal memperbarui warna foto');
+    }
+  };
+
+  const handleAddColorToMotor = async (newCol: string) => {
+    if (!uploadModalMotor || !newCol.trim()) return;
+    const clean = newCol.trim();
+    const curColors = uploadModalMotor.colors || [];
+    if (curColors.includes(clean)) return;
+    const newColors = [...curColors, clean];
+    try {
+      const res = await apiRequest(`/motorcycles/${uploadModalMotor.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ colors: newColors })
+      });
+      if (res.success) {
+        setUploadModalMotor({ ...uploadModalMotor, colors: newColors });
+        loadData();
+      }
+    } catch (e: any) {
+      alert(e.message || 'Gagal menambah varian warna');
+    }
+  };
+
+  const handleDeleteColorFromMotor = async (colToDelete: string) => {
+    if (!uploadModalMotor) return;
+    const newColors = (uploadModalMotor.colors || []).filter((c: string) => c !== colToDelete);
+    try {
+      const res = await apiRequest(`/motorcycles/${uploadModalMotor.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ colors: newColors })
+      });
+      if (res.success) {
+        setUploadModalMotor({ ...uploadModalMotor, colors: newColors });
+        loadData();
+      }
+    } catch (e: any) {
+      alert(e.message || 'Gagal menghapus varian warna');
     }
   };
 
@@ -447,19 +492,20 @@ export const MotorcyclesPage: React.FC = () => {
                 <th className="py-3 px-4">Harga OTR</th>
                 <th className="py-3 px-4">DP Min</th>
                 <th className="py-3 px-4">Stok</th>
+                <th className="py-3 px-4 text-center">Varian & Foto</th>
                 <th className="py-3 px-4 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     Memuat data motor...
                   </td>
                 </tr>
               ) : motorcycles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     Belum ada motor yang sesuai filter.
                   </td>
                 </tr>
@@ -508,6 +554,17 @@ export const MotorcyclesPage: React.FC = () => {
                       }`}>
                         {m.stockStatus}
                       </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setUploadModalMotor(m)}
+                        title="Klik untuk Kelola Varian Warna & Foto"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold text-xs transition-all hover:scale-[1.02] shadow-xs cursor-pointer"
+                      >
+                        <Palette className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span>{m.images?.length || 0} Foto Varian</span>
+                      </button>
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -698,6 +755,92 @@ export const MotorcyclesPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Varian Warna Section */}
+              <div className="space-y-2.5 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Palette className="w-4 h-4 text-blue-600" />
+                    <span>Varian Warna Motor ({formColors.length} varian)</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400">Tekan Enter atau klik Tambah</span>
+                </div>
+
+                {/* Color Chips */}
+                <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                  {formColors.length === 0 ? (
+                    <span className="text-xs text-slate-400 italic">Belum ada varian warna ditambahkan. Ketik di bawah untuk menambah.</span>
+                  ) : (
+                    formColors.map((col, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800"
+                      >
+                        <span>{col}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFormColors(formColors.filter((_, i) => i !== idx))}
+                          className="text-slate-400 hover:text-rose-500 ml-0.5"
+                          title="Hapus varian ini"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                {/* Input Add Color */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Contoh: Deluxe Matte Black, Sporty Red..."
+                    value={newColorInput}
+                    onChange={(e) => setNewColorInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newColorInput.trim() && !formColors.includes(newColorInput.trim())) {
+                          setFormColors([...formColors, newColorInput.trim()]);
+                          setNewColorInput('');
+                        }
+                      }
+                    }}
+                    className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newColorInput.trim() && !formColors.includes(newColorInput.trim())) {
+                        setFormColors([...formColors, newColorInput.trim()]);
+                        setNewColorInput('');
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                  >
+                    + Tambah Warna
+                  </button>
+                </div>
+
+                {editingMotorcycle && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      Tersimpan {existingImages.length} foto varian warna
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddModal(false);
+                        setUploadModalMotor(editingMotorcycle);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Image className="w-3.5 h-3.5" />
+                      <span>Buka Galeri & Upload Foto Tiap Warna</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Foto Produk Section */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -812,6 +955,72 @@ export const MotorcyclesPage: React.FC = () => {
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Varian Warna Chips Management */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Daftar Varian Warna Terdaftar ({uploadModalMotor.colors?.length || 0})</span>
+                </span>
+                <span className="text-[11px] text-slate-400">Klik tanda silang untuk menghapus</span>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {(!uploadModalMotor.colors || uploadModalMotor.colors.length === 0) ? (
+                  <span className="text-xs text-slate-400 italic">Belum ada varian warna. Ketik di bawah untuk menambahkan.</span>
+                ) : (
+                  uploadModalMotor.colors.map((c: string, idx: number) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-medium border border-slate-200 dark:border-slate-700 shadow-xs"
+                    >
+                      <span>{c}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteColorFromMotor(c)}
+                        className="text-slate-400 hover:text-rose-500"
+                        title="Hapus varian warna ini"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+
+              {/* Quick Add Color Form */}
+              <div className="flex gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder="Ketik nama varian warna baru (contoh: Deluxe Matte Black)..."
+                  value={modalAddColorText}
+                  onChange={(e) => setModalAddColorText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (modalAddColorText.trim()) {
+                        handleAddColorToMotor(modalAddColorText);
+                        setModalAddColorText('');
+                      }
+                    }
+                  }}
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (modalAddColorText.trim()) {
+                      handleAddColorToMotor(modalAddColorText);
+                      setModalAddColorText('');
+                    }
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                >
+                  + Tambah Warna
+                </button>
+              </div>
             </div>
 
             {/* List Existing Photos */}
