@@ -100,7 +100,9 @@ export async function askSalesAiAgent(
       .map((m, idx) => {
         const otr = Number(m.priceOtr).toLocaleString('id-ID');
         const minDp = m.minDp ? Number(m.minDp).toLocaleString('id-ID') : '10%';
-        return `${idx + 1}. ${m.name} (${m.category}, Model: ${m.model}) - OTR: Rp${otr}, Min DP: Rp${minDp}`;
+        const colorStr = m.colors?.length ? ` | Pilihan Warna: ${m.colors.join(', ')}` : '';
+        const descStr = m.description ? ` | Info: ${m.description}` : '';
+        return `${idx + 1}. ${m.name} (${m.category}, Model: ${m.model}) - OTR: Rp${otr}, Min DP: Rp${minDp}${colorStr}${descStr}`;
       })
       .join('\n');
 
