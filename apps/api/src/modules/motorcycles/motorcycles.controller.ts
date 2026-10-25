@@ -235,6 +235,13 @@ export async function uploadMotorcycleImages(req: Request, res: Response, next: 
     const hasPrimary = motorcycle.images.some((img) => img.isPrimary);
     const colorName = typeof req.body.colorName === 'string' && req.body.colorName.trim() ? req.body.colorName.trim() : null;
 
+    if (colorName && !motorcycle.colors.includes(colorName)) {
+      await prisma.motorcycle.update({
+        where: { id },
+        data: { colors: [...motorcycle.colors, colorName] }
+      });
+    }
+
     if (replace) {
       await prisma.motorcycleImage.updateMany({
         where: { motorcycleId: id },
@@ -318,11 +325,22 @@ export async function updateMotorcycleImage(req: Request, res: Response, next: N
   try {
     const { id, imageId } = req.params;
     const { colorName } = req.body;
+    const cleanColor = typeof colorName === 'string' ? colorName.trim() || null : null;
 
     const updated = await prisma.motorcycleImage.update({
       where: { id: imageId },
-      data: { colorName: typeof colorName === 'string' ? colorName.trim() || null : null }
+      data: { colorName: cleanColor }
     });
+
+    if (cleanColor) {
+      const motor = await prisma.motorcycle.findUnique({ where: { id } });
+      if (motor && !motor.colors.includes(cleanColor)) {
+        await prisma.motorcycle.update({
+          where: { id },
+          data: { colors: [...motor.colors, cleanColor] }
+        });
+      }
+    }
 
     return res.json({ success: true, data: updated });
   } catch (err) {
