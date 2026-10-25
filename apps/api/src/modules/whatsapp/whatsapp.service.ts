@@ -262,40 +262,78 @@ class WhatsAppManager {
       });
 
       for (const c of contacts) {
-        const lidJid = c.phone.includes('@') ? c.phone : `${c.phone}@lid`;
-        const realPhone = await this.resolveLidToPn(lidJid);
-        if (realPhone && isValidPhoneNumber(realPhone)) {
-          const normalized = normalizePhoneNumber(realPhone);
-          logger.info({ contactId: c.id, old: c.phone, resolved: realPhone }, 'Synced contact LID to real phone');
-          await prisma.contact.update({
-            where: { id: c.id },
-            data: {
-              phone: realPhone,
-              phoneNormalized: normalized,
-              internalNotes: c.internalNotes ? `${c.internalNotes} [LID: ${lidJid}]` : `[LID: ${lidJid}]`
+        try {
+          const lidJid = c.phone.includes('@') ? c.phone : `${c.phone}@lid`;
+          const realPhone = await this.resolveLidToPn(lidJid);
+          if (realPhone && isValidPhoneNumber(realPhone)) {
+            const normalized = normalizePhoneNumber(realPhone);
+            logger.info({ contactId: c.id, old: c.phone, resolved: realPhone }, 'Synced contact LID to real phone');
+
+            // Check if normalized phone already exists in another contact row
+            const existingWithSamePhone = await prisma.contact.findFirst({
+              where: {
+                phoneNormalized: normalized,
+                id: { not: c.id }
+              }
+            });
+
+            if (existingWithSamePhone) {
+              // Merge note into existing contact and remove duplicate LID placeholder
+              const notesToAdd = `[LID: ${lidJid}]`;
+              await prisma.contact.update({
+                where: { id: existingWithSamePhone.id },
+                data: {
+                  internalNotes: existingWithSamePhone.internalNotes
+                    ? (existingWithSamePhone.internalNotes.includes(lidJid) ? existingWithSamePhone.internalNotes : `${existingWithSamePhone.internalNotes} ${notesToAdd}`)
+                    : notesToAdd
+                }
+              });
+              await prisma.lead.updateMany({
+                where: { contactId: c.id },
+                data: { contactId: existingWithSamePhone.id, phone: normalized }
+              });
+              await prisma.conversation.updateMany({
+                where: { contactId: c.id },
+                data: { contactId: existingWithSamePhone.id }
+              });
+              await prisma.contact.delete({ where: { id: c.id } }).catch(() => {});
+            } else {
+              await prisma.contact.update({
+                where: { id: c.id },
+                data: {
+                  phone: realPhone,
+                  phoneNormalized: normalized,
+                  internalNotes: c.internalNotes ? `${c.internalNotes} [LID: ${lidJid}]` : `[LID: ${lidJid}]`
+                }
+              });
+              await prisma.lead.updateMany({
+                where: { contactId: c.id },
+                data: { phone: normalized }
+              });
             }
-          });
-          await prisma.lead.updateMany({
-            where: { contactId: c.id },
-            data: { phone: normalized }
-          });
+          }
+        } catch (syncErr) {
+          logger.warn({ syncErr, contactId: c.id }, 'Non-fatal error syncing contact LID');
         }
 
         // Ensure every contact has a Lead
-        const existingLead = await prisma.lead.findFirst({
-          where: { contactId: c.id }
-        });
-        if (!existingLead) {
-          await prisma.lead.create({
-            data: {
-              contactId: c.id,
-              customerName: c.name || 'Prospek WhatsApp',
-              phone: c.phoneNormalized || c.phone,
-              status: 'BARU',
-              notes: 'Inbound chat WhatsApp'
-            }
+        try {
+          const existingLead = await prisma.lead.findFirst({
+            where: { contactId: c.id }
           });
-          logger.info({ contactId: c.id, customer: c.name }, 'Created missing lead for existing contact');
+          if (!existingLead) {
+            await prisma.lead.create({
+              data: {
+                contactId: c.id,
+                customerName: c.name,
+                phone: c.phoneNormalized,
+                status: 'BARU',
+                notes: 'Auto-created from contact sync'
+              }
+            });
+          }
+        } catch (leadErr) {
+          // Ignore duplicate lead
         }
       }
     } catch (err: any) {
@@ -610,7 +648,6 @@ class WhatsAppManager {
       const motors = await prisma.motorcycle.findMany({
         where: { isActive: true },
         include: { brand: true },
-        take: 15,
         orderBy: { priceOtr: 'asc' }
       });
 

@@ -17,18 +17,22 @@ export const LeadsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const loadLeads = async () => {
     setLoading(true);
     try {
       const q = new URLSearchParams();
+      q.append('page', String(page));
       if (statusFilter) q.append('status', statusFilter);
       if (search) q.append('search', search);
 
       const res = await apiRequest(`/leads?${q.toString()}`);
       if (res.success) {
         setLeads(res.data);
+        setTotalPages(res.meta?.totalPages || 1);
       }
     } catch (e) {
       console.error(e);
@@ -39,7 +43,7 @@ export const LeadsPage: React.FC = () => {
 
   useEffect(() => {
     loadLeads();
-  }, [statusFilter, search]);
+  }, [page, statusFilter, search]);
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     setUpdatingId(id);
@@ -196,6 +200,31 @@ export const LeadsPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+            <span className="text-slate-500 dark:text-slate-400">
+              Halaman {page} dari {totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+              >
+                Sebelumnya
+              </button>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+              >
+                Selanjutnya
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

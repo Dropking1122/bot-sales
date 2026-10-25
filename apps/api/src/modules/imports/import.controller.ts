@@ -16,6 +16,7 @@ import {
 import { logAudit } from '../../utils/audit';
 import ExcelJS from 'exceljs';
 import fs from 'fs';
+import path from 'path';
 
 export async function getMotorcycleTemplate(_req: Request, res: Response, next: NextFunction) {
   try {
@@ -144,7 +145,8 @@ export async function executeMotorcycleImport(req: Request, res: Response, next:
       throw new AppError('fileId wajib disertakan dari tahap preview', 400);
     }
 
-    const filePath = `${process.cwd()}/../../storage/uploads/imports/${fileId}`;
+    const safeFileId = path.basename(String(fileId));
+    const filePath = path.join(process.cwd(), '../../storage/uploads/imports', safeFileId);
     if (!fs.existsSync(filePath)) {
       throw new AppError('File tidak ditemukan atau telah kedaluwarsa', 404);
     }
@@ -410,7 +412,8 @@ export async function executeContactImport(req: Request, res: Response, next: Ne
       throw new AppError('fileId wajib disertakan', 400);
     }
 
-    const filePath = `${process.cwd()}/../../storage/uploads/imports/${fileId}`;
+    const safeFileId = path.basename(String(fileId));
+    const filePath = path.join(process.cwd(), '../../storage/uploads/imports', safeFileId);
     if (!fs.existsSync(filePath)) {
       throw new AppError('File tidak ditemukan', 404);
     }

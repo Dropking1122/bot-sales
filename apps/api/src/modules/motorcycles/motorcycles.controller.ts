@@ -49,6 +49,9 @@ export async function listMotorcycles(req: Request, res: Response, next: NextFun
       if (maxPrice) where.priceOtr.lte = parseFloat(String(maxPrice));
     }
 
+    const validSortColumns = ['name', 'priceOtr', 'stock', 'createdAt', 'updatedAt', 'sku'];
+    const safeSortBy = validSortColumns.includes(String(sortBy)) ? String(sortBy) : 'name';
+
     const [total, motorcycles] = await Promise.all([
       prisma.motorcycle.count({ where }),
       prisma.motorcycle.findMany({
@@ -62,7 +65,7 @@ export async function listMotorcycles(req: Request, res: Response, next: NextFun
             take: 1
           }
         },
-        orderBy: { [String(sortBy)]: sortOrder === 'asc' ? 'asc' : 'desc' }
+        orderBy: { [safeSortBy]: sortOrder === 'asc' ? 'asc' : 'desc' }
       })
     ]);
 

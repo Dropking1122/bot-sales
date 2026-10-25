@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/db';
-import { BroadcastCampaignSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, isValidPhoneNumber } from '@bot-sales/shared';
+import { BroadcastCampaignSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, isValidPhoneNumber, sanitizeForExcel } from '@bot-sales/shared';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
 import { resolveBroadcastRecipients, interpolateTemplate } from './broadcast.service';
@@ -107,23 +107,30 @@ export async function createCampaign(req: Request, res: Response, next: NextFunc
         }
       });
 
-      // Prepare recipients with personalized message snapshot and idempotency key
-      for (const r of recipients) {
-        const personalized = await interpolateTemplate(data.messageTemplate, r, motorcycle);
-        const resolvedPhone =
-          isValidPhoneNumber(r.phoneNormalized)
-            ? r.phoneNormalized
-            : (r.phone && !r.phone.includes('@lid') ? r.phone : r.phoneNormalized);
+      // Prepare recipients with personalized message snapshot and idempotency key (batch insert)
+      const recipientData = await Promise.all(
+        recipients.map(async (r) => {
+          const personalized = await interpolateTemplate(data.messageTemplate, r, motorcycle);
+          const resolvedPhone =
+            isValidPhoneNumber(r.phoneNormalized)
+              ? r.phoneNormalized
+              : (r.phone && !r.phone.includes('@lid') ? r.phone : r.phoneNormalized);
 
-        await tx.broadcastRecipient.create({
-          data: {
+          return {
             campaignId: camp.id,
             contactId: r.id,
             phone: resolvedPhone,
             personalizedMessage: personalized,
-            status: 'PENDING',
+            status: 'PENDING' as const,
             idempotencyKey: `${camp.id}_${r.id}`
-          }
+          };
+        })
+      );
+
+      if (recipientData.length > 0) {
+        await tx.broadcastRecipient.createMany({
+          data: recipientData,
+          skipDuplicates: true
         });
       }
 
@@ -394,12 +401,12 @@ export async function exportCampaignReport(req: Request, res: Response, next: Ne
 
     for (const r of campaign.recipients) {
       sheet.addRow({
-        name: r.contact?.name || '-',
-        phone: r.phone,
-        status: r.status,
-        message: r.personalizedMessage || '-',
+        name: sanitizeForExcel(r.contact?.name || '-'),
+        phone: sanitizeForExcel(r.phone),
+        status: sanitizeForExcel(r.status),
+        message: sanitizeForExcel(r.personalizedMessage || '-'),
         sentAt: r.sentAt ? r.sentAt.toISOString() : '-',
-        error: r.errorMessage || '-'
+        error: sanitizeForExcel(r.errorMessage || '-')
       });
     }
 

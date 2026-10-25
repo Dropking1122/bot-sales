@@ -74,9 +74,11 @@ export async function interpolateTemplate(
 
     // Calculate installment estimate if 35 months tenor
     try {
+      const otr = Number(motorcycle.priceOtr);
+      const dp = Number(motorcycle.minDp) || otr * 0.1;
       const sim = await calculateFinancing({
-        hargaOtr: Number(motorcycle.priceOtr),
-        dpAmount: Number(motorcycle.minDp || motorcycle.priceOtr * 0.1),
+        hargaOtr: otr,
+        dpAmount: dp,
         tenorMonths: 35
       });
       message = message.replace(/\{\{cicilan_motor\}\}/gi, formatRupiah(sim.monthlyInstallment));

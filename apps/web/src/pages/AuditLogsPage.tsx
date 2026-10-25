@@ -5,13 +5,17 @@ import { ShieldCheck, Search, Clock, User, Filter } from 'lucide-react';
 export const AuditLogsPage: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     const loadLogs = async () => {
+      setLoading(true);
       try {
-        const res = await apiRequest('/audit-logs');
+        const res = await apiRequest(`/audit-logs?page=${page}`);
         if (res.success) {
           setLogs(res.data);
+          setTotalPages(res.meta?.totalPages || 1);
         }
       } catch (e) {
         console.error(e);
@@ -20,7 +24,7 @@ export const AuditLogsPage: React.FC = () => {
       }
     };
     loadLogs();
-  }, []);
+  }, [page]);
 
   return (
     <div className="space-y-6">
@@ -91,6 +95,31 @@ export const AuditLogsPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+            <span className="text-slate-500 dark:text-slate-400">
+              Halaman {page} dari {totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+              >
+                Sebelumnya
+              </button>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+              >
+                Selanjutnya
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -11,8 +11,27 @@ export function startBroadcastWorker() {
 
   logger.info('Starting Broadcast Background Worker...');
 
+  // Reset orphaned SENDING recipients from prior interrupted runs
+  prisma.broadcastRecipient.updateMany({
+    where: { status: 'SENDING' },
+    data: { status: 'PENDING' }
+  }).catch((err) => logger.error({ err }, 'Failed to reset orphaned SENDING recipients'));
+
   const loop = async () => {
     try {
+      // Auto-activate SCHEDULED campaigns whose scheduled time has arrived
+      const now = new Date();
+      await prisma.broadcastCampaign.updateMany({
+        where: {
+          status: 'SCHEDULED',
+          scheduledAt: { lte: now }
+        },
+        data: {
+          status: 'RUNNING',
+          startedAt: now
+        }
+      });
+
       // Find one active campaign
       const activeCampaign = await prisma.broadcastCampaign.findFirst({
         where: { status: 'RUNNING' },

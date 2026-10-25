@@ -20,6 +20,8 @@ import {
 export const BroadcastsPage: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   // Wizard Modal
   const [showWizard, setShowWizard] = useState(false);
@@ -38,9 +40,10 @@ export const BroadcastsPage: React.FC = () => {
 
   const loadCampaigns = async () => {
     try {
-      const res = await apiRequest('/broadcasts');
+      const res = await apiRequest(`/broadcasts?page=${page}`);
       if (res.success) {
         setCampaigns(res.data);
+        setTotalPages(res.meta?.totalPages || 1);
       }
     } catch (e) {
       console.error(e);
@@ -51,9 +54,12 @@ export const BroadcastsPage: React.FC = () => {
 
   useEffect(() => {
     loadCampaigns();
-    const interval = setInterval(loadCampaigns, 5000); // 5s refresh for broadcast progress
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      loadCampaigns();
+    }, 5000); // 5s refresh for broadcast progress
     return () => clearInterval(interval);
-  }, []);
+  }, [page]);
 
   const handleFetchPreview = async () => {
     setPreviewLoading(true);
@@ -284,6 +290,31 @@ export const BroadcastsPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+            <span className="text-slate-500 dark:text-slate-400">
+              Halaman {page} dari {totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+              >
+                Sebelumnya
+              </button>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+              >
+                Selanjutnya
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Wizard Modal */}

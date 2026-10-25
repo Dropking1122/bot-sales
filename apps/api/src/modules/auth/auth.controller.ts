@@ -57,7 +57,11 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 export async function passkeyLogin(req: Request, res: Response, next: NextFunction) {
   try {
     const { passkey } = req.body;
-    const serverPasskey = process.env.ADMIN_PASSKEY || 'DMS-SECURE-2026-X7R9';
+    const serverPasskey = process.env.ADMIN_PASSKEY;
+
+    if (!serverPasskey) {
+      return res.status(503).json({ success: false, message: 'Otentikasi passkey dinonaktifkan di server ini' });
+    }
 
     if (!passkey || String(passkey).trim() !== serverPasskey.trim()) {
       return res.status(401).json({ success: false, message: 'Kunci otorisasi tidak valid' });

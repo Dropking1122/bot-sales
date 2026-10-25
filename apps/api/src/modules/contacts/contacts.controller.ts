@@ -51,6 +51,9 @@ export async function listContacts(req: Request, res: Response, next: NextFuncti
       where.isOptOut = isOptOut === 'true';
     }
 
+    const validSortColumns = ['createdAt', 'updatedAt', 'name', 'phoneNormalized', 'source'];
+    const safeSortBy = validSortColumns.includes(String(sortBy)) ? String(sortBy) : 'createdAt';
+
     const [total, contacts] = await Promise.all([
       prisma.contact.count({ where }),
       prisma.contact.findMany({
@@ -60,7 +63,7 @@ export async function listContacts(req: Request, res: Response, next: NextFuncti
         include: {
           contactTags: { include: { tag: true } }
         },
-        orderBy: { [String(sortBy)]: sortOrder === 'asc' ? 'asc' : 'desc' }
+        orderBy: { [safeSortBy]: sortOrder === 'asc' ? 'asc' : 'desc' }
       })
     ]);
 
@@ -281,25 +284,28 @@ export async function bulkAddTags(req: Request, res: Response, next: NextFunctio
       throw new AppError('contactIds dan tags harus berupa array dan tidak boleh kosong', 400);
     }
 
-    for (const tagName of tags) {
-      const tag = await prisma.tag.upsert({
-        where: { name: tagName.trim() },
-        update: {},
-        create: { name: tagName.trim() }
-      });
-
-      for (const contactId of contactIds) {
-        await prisma.contactTag.upsert({
-          where: {
-            contactId_tagId: {
-              contactId,
-              tagId: tag.id
-            }
-          },
+    const createdTags = await Promise.all(
+      tags.map((tagName: string) =>
+        prisma.tag.upsert({
+          where: { name: tagName.trim() },
           update: {},
-          create: { contactId, tagId: tag.id }
-        });
+          create: { name: tagName.trim() }
+        })
+      )
+    );
+
+    const contactTagRows: { contactId: string; tagId: string }[] = [];
+    for (const tag of createdTags) {
+      for (const contactId of contactIds) {
+        contactTagRows.push({ contactId, tagId: tag.id });
       }
+    }
+
+    if (contactTagRows.length > 0) {
+      await prisma.contactTag.createMany({
+        data: contactTagRows,
+        skipDuplicates: true
+      });
     }
 
     await logAudit(req, 'BULK_ADD_TAGS', 'Contact', null, { contactCount: contactIds.length, tags });

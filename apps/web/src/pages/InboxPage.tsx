@@ -100,6 +100,7 @@ export const InboxPage: React.FC = () => {
   useEffect(() => {
     loadConversations(true);
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       loadConversations(false);
       pollActiveMessages();
     }, 4000);
