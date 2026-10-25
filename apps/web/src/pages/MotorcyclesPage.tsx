@@ -115,7 +115,7 @@ export const MotorcyclesPage: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleOpenEdit = (m: any) => {
+  const handleOpenEdit = async (m: any) => {
     setEditingMotorcycle(m);
     setFormSku(m.sku || '');
     setFormName(m.name || '');
@@ -135,6 +135,25 @@ export const MotorcyclesPage: React.FC = () => {
     setFormImagePreview(null);
     setExistingImages(m.images || []);
     setShowAddModal(true);
+
+    try {
+      const res = await apiRequest(`/motorcycles/${m.id}`);
+      if (res.success && res.data) {
+        setEditingMotorcycle(res.data);
+        setExistingImages(res.data.images || []);
+        setFormColors(res.data.colors || []);
+      }
+    } catch {}
+  };
+
+  const handleOpenUploadModal = async (m: any) => {
+    setUploadModalMotor(m);
+    try {
+      const res = await apiRequest(`/motorcycles/${m.id}`);
+      if (res.success && res.data) {
+        setUploadModalMotor(res.data);
+      }
+    } catch {}
   };
 
   const handleSaveMotorcycle = async (e: React.FormEvent) => {
@@ -558,7 +577,7 @@ export const MotorcyclesPage: React.FC = () => {
                     <td className="py-3.5 px-4 text-center">
                       <button
                         type="button"
-                        onClick={() => setUploadModalMotor(m)}
+                        onClick={() => handleOpenUploadModal(m)}
                         title="Klik untuk Kelola Varian Warna & Foto"
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold text-xs transition-all hover:scale-[1.02] shadow-xs cursor-pointer"
                       >
@@ -576,8 +595,8 @@ export const MotorcyclesPage: React.FC = () => {
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => setUploadModalMotor(m)}
-                          title="Upload Foto"
+                          onClick={() => handleOpenUploadModal(m)}
+                          title="Kelola Foto & Varian"
                           className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                         >
                           <Image className="w-4 h-4" />

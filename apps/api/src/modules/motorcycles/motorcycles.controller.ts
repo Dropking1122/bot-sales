@@ -61,8 +61,7 @@ export async function listMotorcycles(req: Request, res: Response, next: NextFun
         include: {
           brand: { select: { id: true, name: true } },
           images: {
-            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
-            take: 1
+            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }]
           }
         },
         orderBy: { [safeSortBy]: sortOrder === 'asc' ? 'asc' : 'desc' }
