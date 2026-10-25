@@ -228,19 +228,27 @@ export async function uploadMotorcycleImages(req: Request, res: Response, next: 
       throw new AppError('Motor tidak ditemukan', 404);
     }
 
+    const replace = req.query.replace === 'true' || req.body?.replace === 'true';
     const hasPrimary = motorcycle.images.some((img) => img.isPrimary);
+
+    if (replace) {
+      await prisma.motorcycleImage.updateMany({
+        where: { motorcycleId: id },
+        data: { isPrimary: false }
+      });
+    }
 
     const createdImages = await Promise.all(
       files.map(async (file, index) => {
         const url = `/storage/uploads/motorcycles/${file.filename}`;
-        const isPrimary = !hasPrimary && index === 0;
+        const isPrimary = replace ? index === 0 : (!hasPrimary && index === 0);
 
         return prisma.motorcycleImage.create({
           data: {
             motorcycleId: id,
             url,
             isPrimary,
-            sortOrder: motorcycle.images.length + index
+            sortOrder: replace ? index : (motorcycle.images.length + index)
           }
         });
       })

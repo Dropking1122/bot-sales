@@ -32,6 +32,9 @@ export const MotorcyclesPage: React.FC = () => {
   const [uploadModalMotor, setUploadModalMotor] = useState<any | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [formImageFile, setFormImageFile] = useState<File | null>(null);
+  const [formImagePreview, setFormImagePreview] = useState<string | null>(null);
+  const [existingImages, setExistingImages] = useState<any[]>([]);
 
   // Brand Manage Modal
   const [showBrandModal, setShowBrandModal] = useState(false);
@@ -98,6 +101,9 @@ export const MotorcyclesPage: React.FC = () => {
     setFormStockStatus('TERSEDIA');
     setFormDescription('');
     setFormError(null);
+    setFormImageFile(null);
+    setFormImagePreview(null);
+    setExistingImages([]);
     setShowAddModal(true);
   };
 
@@ -115,6 +121,9 @@ export const MotorcyclesPage: React.FC = () => {
     setFormStockStatus(m.stockStatus || 'TERSEDIA');
     setFormDescription(m.description || '');
     setFormError(null);
+    setFormImageFile(null);
+    setFormImagePreview(null);
+    setExistingImages(m.images || []);
     setShowAddModal(true);
   };
 
@@ -139,22 +148,37 @@ export const MotorcyclesPage: React.FC = () => {
         isActive: true
       };
 
+      let savedMotorId = editingMotorcycle?.id;
       if (editingMotorcycle) {
         const res = await apiRequest(`/motorcycles/${editingMotorcycle.id}`, {
           method: 'PATCH',
           body: JSON.stringify(payload)
         });
         if (!res.success) throw new Error(res.error || 'Gagal memperbarui data motor');
+        savedMotorId = res.data?.id || editingMotorcycle.id;
       } else {
         const res = await apiRequest('/motorcycles', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
         if (!res.success) throw new Error(res.error || 'Gagal menyimpan motor');
+        savedMotorId = res.data?.id;
+      }
+
+      // If user chose a new image in the form, upload and replace primary image
+      if (formImageFile && savedMotorId) {
+        const formData = new FormData();
+        formData.append('images', formImageFile);
+        await apiRequest(`/motorcycles/${savedMotorId}/images?replace=true`, {
+          method: 'POST',
+          body: formData
+        });
       }
 
       setShowAddModal(false);
       setEditingMotorcycle(null);
+      setFormImageFile(null);
+      setFormImagePreview(null);
       loadData();
     } catch (err: any) {
       setFormError(err.message || 'Gagal menyimpan motor');
@@ -182,7 +206,7 @@ export const MotorcyclesPage: React.FC = () => {
       const formData = new FormData();
       formData.append('images', selectedFile);
 
-      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images`, {
+      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images?replace=true`, {
         method: 'POST',
         body: formData
       });
@@ -611,6 +635,62 @@ export const MotorcyclesPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Foto Produk Section */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Foto Produk
+                </label>
+                <div className="flex items-center gap-4 p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
+                  <div className="w-20 h-20 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                    {formImagePreview ? (
+                      <img src={formImagePreview} alt="Preview baru" className="w-full h-full object-cover" />
+                    ) : existingImages && existingImages.length > 0 ? (
+                      <img src={existingImages[0].url} alt="Foto saat ini" className="w-full h-full object-cover" />
+                    ) : (
+                      <Image className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-1.5">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files ? e.target.files[0] : null;
+                        setFormImageFile(file);
+                        if (file) {
+                          setFormImagePreview(URL.createObjectURL(file));
+                        } else {
+                          setFormImagePreview(null);
+                        }
+                      }}
+                      className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-950 dark:file:text-blue-300 hover:file:bg-blue-100"
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>
+                        {formImageFile
+                          ? `Foto baru dipilih (${(formImageFile.size / 1024).toFixed(1)} KB)`
+                          : existingImages && existingImages.length > 0
+                          ? 'Pilih foto baru untuk mengganti foto produk saat ini'
+                          : 'Pilih foto motor untuk diunggah (PNG, JPG, WebP)'}
+                      </span>
+                      {formImageFile && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormImageFile(null);
+                            setFormImagePreview(null);
+                          }}
+                          className="text-rose-500 hover:underline font-medium"
+                        >
+                          Batal Ganti
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Deskripsi / Spesifikasi & Pilihan Warna</label>
                 <textarea
@@ -650,26 +730,55 @@ export const MotorcyclesPage: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Upload Foto - {uploadModalMotor.name}
+                Upload / Ganti Foto - {uploadModalMotor.name}
               </h3>
-              <button onClick={() => setUploadModalMotor(null)} className="text-slate-400">
+              <button
+                onClick={() => {
+                  setUploadModalMotor(null);
+                  setSelectedFile(null);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleUploadImage} className="space-y-4">
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                <div className="w-20 h-20 rounded-lg bg-slate-200 dark:bg-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+                  {selectedFile ? (
+                    <img src={URL.createObjectURL(selectedFile)} alt="Preview baru" className="w-full h-full object-cover" />
+                  ) : uploadModalMotor.images && uploadModalMotor.images[0] ? (
+                    <img src={uploadModalMotor.images[0].url} alt={uploadModalMotor.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <Image className="w-8 h-8 text-slate-400" />
+                  )}
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300">
+                  <p className="font-medium text-slate-800 dark:text-white">
+                    {selectedFile ? 'Preview Foto Baru' : (uploadModalMotor.images?.length ? 'Foto Saat Ini' : 'Belum Ada Foto')}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Pilih file baru di bawah untuk mengganti foto produk ini.'}
+                  </p>
+                </div>
+              </div>
+
               <input
                 type="file"
                 accept="image/*"
                 onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
-                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-950 dark:file:text-blue-300"
+                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-950 dark:file:text-blue-300 hover:file:bg-blue-100"
               />
 
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setUploadModalMotor(null)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs"
+                  onClick={() => {
+                    setUploadModalMotor(null);
+                    setSelectedFile(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300"
                 >
                   Batal
                 </button>
@@ -679,7 +788,7 @@ export const MotorcyclesPage: React.FC = () => {
                   className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
                 >
                   {uploading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Upload</span>
+                  <span>Simpan & Ganti Foto</span>
                 </button>
               </div>
             </form>
