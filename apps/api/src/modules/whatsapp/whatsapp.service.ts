@@ -825,11 +825,15 @@ class WhatsAppManager {
       if (aiReply) {
         let cleanAiReply = aiReply;
         let targetMotorName: string | null = null;
+        let requestedColor: string | null = null;
 
-        // Check if AI explicitly tagged a photo: [FOTO: nama_motor] or [GAMBAR: nama_motor]
-        const tagMatch = aiReply.match(/\[(?:FOTO|GAMBAR):\s*([^\]]+)\]/i);
+        // Check if AI explicitly tagged a photo: [FOTO: nama_motor | WARNA: nama_warna] or [FOTO: nama_motor]
+        const tagMatch = aiReply.match(/\[(?:FOTO|GAMBAR):\s*([^|\]]+)(?:\|\s*WARNA:\s*([^\]]+))?\]/i);
         if (tagMatch) {
           targetMotorName = tagMatch[1].trim();
+          if (tagMatch[2]) {
+            requestedColor = tagMatch[2].trim();
+          }
           cleanAiReply = aiReply.replace(/\[(?:FOTO|GAMBAR):\s*[^\]]+\]/gi, '').trim();
         }
 
@@ -853,10 +857,26 @@ class WhatsAppManager {
           }
         }
 
+        // If no color was extracted from tag, check if user or context mentioned a color
+        if (!requestedColor) {
+          const colorKeywords = [
+            'hitam', 'black', 'merah', 'red', 'putih', 'white', 'biru', 'blue',
+            'silver', 'abu', 'grey', 'coklat', 'brown', 'hijau', 'green',
+            'matte', 'pearl', 'deluxe', 'cbs', 'iss', 'sporty', 'fashion', 'prestige', 'stylish'
+          ];
+          const lowerUserText = text.toLowerCase();
+          for (const ck of colorKeywords) {
+            if (lowerUserText.includes(ck)) {
+              requestedColor = ck;
+              break;
+            }
+          }
+        }
+
         if (targetMotorName) {
           const motor = await this.findMotorcycleFromText(targetMotorName);
           if (motor) {
-            const photo = this.getMotorcyclePhoto(motor);
+            const photo = this.getMotorcyclePhoto(motor, requestedColor || undefined);
             if (photo.mediaPath) {
               return {
                 text: cleanAiReply,
@@ -885,11 +905,44 @@ class WhatsAppManager {
       `• *SALES* - Bicara dengan tim sales kami`;
   }
 
-  private getMotorcyclePhoto(motor: any): { mediaPath?: string; mediaUrl?: string } {
+  private getMotorcyclePhoto(motor: any, requestedColor?: string): { mediaPath?: string; mediaUrl?: string; colorName?: string } {
     if (!motor || !motor.images || motor.images.length === 0) {
       return {};
     }
-    const relUrl = motor.images[0].url;
+
+    let targetImage = motor.images.find((img: any) => img.isPrimary) || motor.images[0];
+
+    // If customer asked for a specific color variant, try to match it!
+    if (requestedColor && typeof requestedColor === 'string') {
+      const qColor = requestedColor.toLowerCase().trim();
+      const colorSynonyms: Record<string, string[]> = {
+        hitam: ['black', 'dark', 'hitam'],
+        black: ['hitam', 'dark', 'black'],
+        merah: ['red', 'merah', 'crimson'],
+        red: ['merah', 'red'],
+        putih: ['white', 'putih', 'pearl'],
+        white: ['putih', 'white', 'pearl'],
+        biru: ['blue', 'biru', 'cyan'],
+        blue: ['biru', 'blue'],
+        abu: ['grey', 'gray', 'abu', 'silver', 'titanium'],
+        silver: ['perak', 'silver', 'abu', 'grey'],
+        coklat: ['brown', 'coklat', 'matte brown'],
+        hijau: ['green', 'hijau', 'matte green']
+      };
+
+      const searchTerms = [qColor, ...(colorSynonyms[qColor] || [])];
+
+      const colorMatch = motor.images.find((img: any) => {
+        if (!img.colorName) return false;
+        const cLower = img.colorName.toLowerCase();
+        return searchTerms.some((term) => cLower.includes(term) || term.includes(cLower));
+      });
+      if (colorMatch) {
+        targetImage = colorMatch;
+      }
+    }
+
+    const relUrl = targetImage.url;
     const filename = path.basename(relUrl);
 
     const candidates = [
@@ -903,10 +956,10 @@ class WhatsAppManager {
 
     for (const cand of candidates) {
       if (fs.existsSync(cand)) {
-        return { mediaPath: cand, mediaUrl: relUrl };
+        return { mediaPath: cand, mediaUrl: relUrl, colorName: targetImage.colorName || undefined };
       }
     }
-    return { mediaUrl: relUrl };
+    return { mediaUrl: relUrl, colorName: targetImage.colorName || undefined };
   }
 
   private async findMotorcycleFromText(query: string): Promise<any | null> {

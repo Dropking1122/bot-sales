@@ -32,6 +32,9 @@ export const MotorcyclesPage: React.FC = () => {
   const [uploadModalMotor, setUploadModalMotor] = useState<any | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [modalColorName, setModalColorName] = useState<string>('');
+  const [customColorText, setCustomColorText] = useState<string>('');
+  const [isReplaceImage, setIsReplaceImage] = useState<boolean>(false);
   const [formImageFile, setFormImageFile] = useState<File | null>(null);
   const [formImagePreview, setFormImagePreview] = useState<string | null>(null);
   const [existingImages, setExistingImages] = useState<any[]>([]);
@@ -203,21 +206,81 @@ export const MotorcyclesPage: React.FC = () => {
     setUploading(true);
 
     try {
+      const colorToSave = modalColorName === '__custom__' ? customColorText.trim() : modalColorName.trim();
       const formData = new FormData();
       formData.append('images', selectedFile);
+      if (colorToSave) {
+        formData.append('colorName', colorToSave);
+      }
 
-      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images?replace=true`, {
+      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images?replace=${isReplaceImage}`, {
         method: 'POST',
         body: formData
       });
 
       setSelectedFile(null);
-      setUploadModalMotor(null);
+      setModalColorName('');
+      setCustomColorText('');
+      setIsReplaceImage(false);
+
+      const refreshRes = await apiRequest(`/motorcycles/${uploadModalMotor.id}`);
+      if (refreshRes.success && refreshRes.data) {
+        setUploadModalMotor(refreshRes.data);
+      }
       loadData();
     } catch (err: any) {
       alert(err.message || 'Gagal mengunggah foto');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDeleteModalImage = async (imageId: string) => {
+    if (!uploadModalMotor || !confirm('Hapus foto ini?')) return;
+    try {
+      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images/${imageId}`, {
+        method: 'DELETE'
+      });
+      const refreshRes = await apiRequest(`/motorcycles/${uploadModalMotor.id}`);
+      if (refreshRes.success && refreshRes.data) {
+        setUploadModalMotor(refreshRes.data);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Gagal menghapus gambar');
+    }
+  };
+
+  const handleSetPrimaryModalImage = async (imageId: string) => {
+    if (!uploadModalMotor) return;
+    try {
+      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images/${imageId}/primary`, {
+        method: 'PATCH'
+      });
+      const refreshRes = await apiRequest(`/motorcycles/${uploadModalMotor.id}`);
+      if (refreshRes.success && refreshRes.data) {
+        setUploadModalMotor(refreshRes.data);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Gagal mengubah foto utama');
+    }
+  };
+
+  const handleUpdateImageColor = async (imageId: string, newColor: string) => {
+    if (!uploadModalMotor) return;
+    try {
+      await apiRequest(`/motorcycles/${uploadModalMotor.id}/images/${imageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ colorName: newColor })
+      });
+      const refreshRes = await apiRequest(`/motorcycles/${uploadModalMotor.id}`);
+      if (refreshRes.success && refreshRes.data) {
+        setUploadModalMotor(refreshRes.data);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Gagal memperbarui warna foto');
     }
   };
 
@@ -724,42 +787,135 @@ export const MotorcyclesPage: React.FC = () => {
         </div>
       )}
 
-      {/* Upload Image Modal */}
+      {/* Upload & Color Photo Management Modal */}
       {uploadModalMotor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Upload / Ganti Foto - {uploadModalMotor.name}
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl p-6 space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                  <Image className="w-4 h-4 text-blue-600" />
+                  <span>Kelola Foto & Varian Warna</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {uploadModalMotor.name}
+                </p>
+              </div>
               <button
                 onClick={() => {
                   setUploadModalMotor(null);
                   setSelectedFile(null);
+                  setModalColorName('');
+                  setCustomColorText('');
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleUploadImage} className="space-y-4">
+            {/* List Existing Photos */}
+            <div className="space-y-3">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Foto Unit & Varian Warna Saat Ini ({uploadModalMotor.images?.length || 0})
+              </span>
+
+              {(!uploadModalMotor.images || uploadModalMotor.images.length === 0) ? (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400">
+                  Belum ada foto yang diunggah untuk motor ini.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto p-1">
+                  {uploadModalMotor.images.map((img: any) => (
+                    <div
+                      key={img.id}
+                      className={`p-2.5 rounded-xl border flex flex-col justify-between gap-2 transition-all ${
+                        img.isPrimary
+                          ? 'border-blue-500/60 bg-blue-50/40 dark:bg-blue-950/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40'
+                      }`}
+                    >
+                      <div className="flex gap-2.5 items-center">
+                        <div className="w-16 h-14 rounded-lg bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700">
+                          <img src={img.url} alt={img.colorName || 'Motor'} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="text-[11px] min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {img.isPrimary && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-blue-600 text-white font-bold text-[9px]">
+                                ⭐ Utama
+                              </span>
+                            )}
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
+                              {img.colorName ? `Warna: ${img.colorName}` : 'Tanpa Varian'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5 truncate font-mono">
+                            {img.url.split('/').pop()}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Color assign & action buttons */}
+                      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <select
+                          value={img.colorName || ''}
+                          onChange={(e) => handleUpdateImageColor(img.id, e.target.value)}
+                          className="text-[11px] py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 max-w-[130px] truncate"
+                        >
+                          <option value="">Tanpa Varian (Umum)</option>
+                          {uploadModalMotor.colors && uploadModalMotor.colors.map((c: string) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+
+                        <div className="flex items-center gap-1">
+                          {!img.isPrimary && (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimaryModalImage(img.id)}
+                              title="Jadikan Foto Utama"
+                              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 dark:bg-slate-800 dark:hover:bg-blue-900/40 dark:text-slate-300 text-[10px] font-medium transition-colors"
+                            >
+                              Jadikan Utama
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteModalImage(img.id)}
+                            title="Hapus Foto"
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Upload Form */}
+            <form onSubmit={handleUploadImage} className="space-y-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Tambah / Unggah Foto Baru
+              </span>
+
               <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                <div className="w-20 h-20 rounded-lg bg-slate-200 dark:bg-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+                <div className="w-16 h-16 rounded-lg bg-slate-200 dark:bg-slate-700 overflow-hidden flex items-center justify-center shrink-0">
                   {selectedFile ? (
                     <img src={URL.createObjectURL(selectedFile)} alt="Preview baru" className="w-full h-full object-cover" />
-                  ) : uploadModalMotor.images && uploadModalMotor.images[0] ? (
-                    <img src={uploadModalMotor.images[0].url} alt={uploadModalMotor.name} className="w-full h-full object-cover" />
                   ) : (
-                    <Image className="w-8 h-8 text-slate-400" />
+                    <Image className="w-6 h-6 text-slate-400" />
                   )}
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-300">
                   <p className="font-medium text-slate-800 dark:text-white">
-                    {selectedFile ? 'Preview Foto Baru' : (uploadModalMotor.images?.length ? 'Foto Saat Ini' : 'Belum Ada Foto')}
+                    {selectedFile ? selectedFile.name : 'Pilih Berkas Foto'}
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Pilih file baru di bawah untuk mengganti foto produk ini.'}
+                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Format JPG/PNG/WEBP (Maks 10MB)'}
                   </p>
                 </div>
               </div>
@@ -768,27 +924,78 @@ export const MotorcyclesPage: React.FC = () => {
                 type="file"
                 accept="image/*"
                 onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
-                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-950 dark:file:text-blue-300 hover:file:bg-blue-100"
+                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-950 dark:file:text-blue-300 hover:file:bg-blue-100 cursor-pointer"
               />
 
-              <div className="flex justify-end gap-2">
+              {/* Color variant association */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Varian Warna Foto Ini:
+                  </label>
+                  <select
+                    value={modalColorName}
+                    onChange={(e) => setModalColorName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden"
+                  >
+                    <option value="">Foto Utama (Tanpa Varian Khusus)</option>
+                    {uploadModalMotor.colors && uploadModalMotor.colors.map((c: string) => (
+                      <option key={c} value={c}>Varian: {c}</option>
+                    ))}
+                    <option value="__custom__">+ Ketik Nama Warna Sendiri...</option>
+                  </select>
+                </div>
+
+                {modalColorName === '__custom__' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Ketik Nama Varian:
+                    </label>
+                    <input
+                      type="text"
+                      value={customColorText}
+                      onChange={(e) => setCustomColorText(e.target.value)}
+                      placeholder="Contoh: Hard Rock Black"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Replace Toggle */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="replaceCheck"
+                  checked={isReplaceImage}
+                  onChange={(e) => setIsReplaceImage(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="replaceCheck" className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                  Hapus semua foto lama dan ganti dengan foto ini sebagai foto utama
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => {
                     setUploadModalMotor(null);
                     setSelectedFile(null);
+                    setModalColorName('');
+                    setCustomColorText('');
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300"
+                  className="px-3.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs text-slate-700 dark:text-slate-300"
                 >
-                  Batal
+                  Tutup
                 </button>
                 <button
                   type="submit"
                   disabled={!selectedFile || uploading}
-                  className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
+                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
                 >
                   {uploading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Simpan & Ganti Foto</span>
+                  <span>Unggah Foto</span>
                 </button>
               </div>
             </form>

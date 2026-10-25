@@ -8,21 +8,29 @@ export interface AiAgentConfig {
   providerUrl: string;
   apiKey: string;
   model: string;
+  assistantName: string;
   systemPrompt: string;
   customFaq: string;
   temperature: number;
   maxTokens: number;
 }
 
-const DEFAULT_SYSTEM_PROMPT = `Anda adalah Vina, konsultan sales resmi dealer motor Honda yang ramah, sopan, bersahabat, dan profesional.
+const DEFAULT_SYSTEM_PROMPT = `Anda adalah {{ASSISTANT_NAME}}, konsultan sales resmi dealer motor Honda yang ramah, sopan, bersahabat, dan profesional.
 Tugas Anda:
 1. Membantu calon pembeli memilih sepeda motor Honda yang tepat sesuai kebutuhan, selera, dan anggaran mereka.
-2. Memberikan informasi akurat mengenai harga OTR, uang muka (DP), dan spesifikasi motor sesuai data resmi dealer di bawah ini.
-3. Menjelaskan keunggulan motor (irit bahan bakar, bagasi luas, fitur smart key, CBS/ABS, dll.) secara ringkas dan meyakinkan.
-4. Gaya komunikasi: Santun, ramah Indonesia (gunakan sapaan "Kak" atau sebut nama customer), singkat, padat (maksimal 2-3 paragraf pendek agar nyaman dibaca di WhatsApp), dan komunikatif.
-5. Bila pelanggan menanyakan simulasi kredit terperinci, anjurkan mengetik format mudah "SIMULASI <nomor motor>" atau tawarkan bantuan untuk disambungkan langsung dengan tim sales kami (ketik "SALES").
-6. Jangan mengarang harga atau promo yang tidak ada pada daftar katalog resmi dealer.
-7. Bila pelanggan meminta melihat foto/gambar unit motor (contoh: "bisa kirim fotonya?", "ada gambar Beat?"), atau Anda merekomendasikan unit tertentu dan ingin memperlihatkan fotonya, sertakan tag [FOTO: nama motor] di baris pertama balasan Anda (contoh: [FOTO: All New Honda BeAT]). Sistem WhatsApp akan otomatis melampirkan foto resmi motor tersebut dari database dealer.`;
+2. Memberikan informasi akurat mengenai harga OTR, uang muka (DP), pilihan warna, dan spesifikasi motor sesuai data resmi dealer di bawah ini.
+3. Menjelaskan keunggulan motor secara ringkas dan meyakinkan.
+4. ATURAN SAPAAN & KOMUNIKASI (SANGAT PENTING):
+   - Jika pelanggan memberi salam Islami (misal: "Assalamualaikum", "Assalamu'alaikum", "Salam"), jawablah dengan salam yang santun ("Waalaikumsalam Kak...").
+   - Jika obrolan BARU PERTAMA KALI dimulai atau pelanggan baru menyapa ("Halo", "P", "Pagi", "Siang", "Malam"), berikan sapaan ramah pembuka dan tanyakan apa yang bisa dibantu.
+   - JIKA PERCAKAPAN SEDANG BERJALAN (ada obrolan sebelumnya atau pelanggan bertanya lanjutan/spesifik): DILARANG MENGULANG SAPAAN "Halo Kak..." di setiap balasan! LANGSUNG JAWAB INTI PERTANYAAN (to the point, ringkas, dan jelas) agar obrolan terasa alami seperti chat manusia sungguhan.
+5. PENGIRIMAN FOTO & VARIAN WARNA:
+   - Bila pelanggan meminta melihat foto unit atau varian warna tertentu (contoh: "bisa kirim fotonya?", "ada gambar Beat warna hitam?", "mau lihat foto Scoopy merah"), sertakan tag di baris paling atas balasan Anda:
+     Format jika ada varian warna: [FOTO: nama motor | WARNA: nama warna] (contoh: [FOTO: All New Honda BeAT | WARNA: Hard Rock Black])
+     Format umum: [FOTO: nama motor] (contoh: [FOTO: New Honda Scoopy])
+     Sistem WhatsApp dealer akan otomatis mencocokkan dan melampirkan foto resmi motor/warna tersebut dari database.
+6. Bila pelanggan menanyakan simulasi kredit terperinci, anjurkan mengetik format mudah "SIMULASI <nomor motor>" atau tawarkan bantuan untuk disambungkan langsung dengan tim sales kami (ketik "SALES").
+7. Jangan mengarang harga atau promo yang tidak ada pada daftar katalog resmi dealer.`;
 
 const DEFAULT_CUSTOM_FAQ = `[Syarat Berkas Kredit]
 Q: Apa saja syarat pengajuan kredit motor Honda?
@@ -61,6 +69,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
           'ai_provider_url',
           'ai_api_key',
           'ai_model',
+          'ai_assistant_name',
           'ai_system_prompt',
           'ai_custom_faq',
           'ai_temperature',
@@ -88,7 +97,9 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
   const providerUrl = (map.get('ai_provider_url') || 'http://127.0.0.1:20128/v1').replace(/\/+$/, '');
   const apiKey = map.get('ai_api_key') || fallbackKey;
   const model = map.get('ai_model') || 'antigravity';
-  const systemPrompt = map.get('ai_system_prompt') || DEFAULT_SYSTEM_PROMPT;
+  const assistantName = map.get('ai_assistant_name') || 'Vina';
+  const rawSystemPrompt = map.get('ai_system_prompt') || DEFAULT_SYSTEM_PROMPT;
+  const systemPrompt = rawSystemPrompt.replace(/\{\{ASSISTANT_NAME\}\}/g, assistantName);
   const customFaq = map.get('ai_custom_faq') || DEFAULT_CUSTOM_FAQ;
   const temperature = parseFloat(map.get('ai_temperature') || '0.7') || 0.7;
   const maxTokens = parseInt(map.get('ai_max_tokens') || '400', 10) || 400;
@@ -98,6 +109,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
     providerUrl,
     apiKey,
     model,
+    assistantName,
     systemPrompt,
     customFaq,
     temperature,
@@ -152,7 +164,22 @@ export async function askSalesAiAgent(
         : Promise.resolve(null)
     ]);
 
+    // 3. Format riwayat pesan (Memori jangka pendek: 10 pesan terakhir)
+    const formattedHistory = conversationHistory.slice(-10).map((m) => ({
+      role: m.senderType === 'CUSTOMER' ? 'user' : 'assistant',
+      content: m.content
+    }));
+
+    const isOngoing = formattedHistory.length > 0;
+    const conversationStatus = isOngoing
+      ? 'SEDANG BERJALAN (Percakapan Lanjutan) - DILARANG MENGULANG salam pembuka seperti "Halo Kak [Nama]". LANGSUNG JAWAB INTI PERTANYAAN secara to the point, bersahabat, dan jelas!'
+      : 'BARU DIMULAI (Pesan Pertama) - Berikan salam yang sopan dan ramah.';
+
     const contextInstruction = `
+--- STATUS KOMUNIKASI ---
+Nama Anda (Sales): ${config.assistantName || 'Vina'}
+Status Percakapan: ${conversationStatus}
+
 --- DATA RESMI DEALER ---
 Alamat: ${addr?.value || 'Showroom Resmi Honda'}
 Jam Operasional: ${hours?.value || 'Senin - Sabtu 08:30 - 17:00 WIB'}
@@ -173,12 +200,6 @@ ${config.customFaq}
 --------------------------------------------------`;
 
     const fullSystemPrompt = `${config.systemPrompt}\n\n${contextInstruction}`;
-
-    // 3. Format riwayat pesan (Memori jangka pendek: 10 pesan terakhir)
-    const formattedHistory = conversationHistory.slice(-10).map((m) => ({
-      role: m.senderType === 'CUSTOMER' ? 'user' : 'assistant',
-      content: m.content
-    }));
 
     const messages = [
       { role: 'system', content: fullSystemPrompt },
@@ -232,6 +253,7 @@ export async function testAiAgent(options?: {
   providerUrl?: string;
   apiKey?: string;
   model?: string;
+  assistantName?: string;
   systemPrompt?: string;
 }): Promise<{ success: boolean; reply?: string; error?: string }> {
   try {
@@ -239,7 +261,9 @@ export async function testAiAgent(options?: {
     const providerUrl = (options?.providerUrl || config.providerUrl).replace(/\/+$/, '');
     const apiKey = options?.apiKey !== undefined ? options.apiKey : config.apiKey;
     const model = options?.model || config.model;
-    const systemPrompt = options?.systemPrompt || config.systemPrompt;
+    const assistantName = options?.assistantName || config.assistantName || 'Vina';
+    let systemPrompt = options?.systemPrompt || config.systemPrompt;
+    systemPrompt = systemPrompt.replace(/\{\{ASSISTANT_NAME\}\}/g, assistantName);
 
     const endpoint = `${providerUrl}/chat/completions`;
     const res = await fetch(endpoint, {

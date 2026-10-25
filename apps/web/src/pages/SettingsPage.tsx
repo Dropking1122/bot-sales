@@ -152,6 +152,7 @@ export const SettingsPage: React.FC = () => {
           providerUrl: settings.ai_provider_url,
           apiKey: settings.ai_api_key,
           model: settings.ai_model,
+          assistantName: settings.ai_assistant_name,
           systemPrompt: settings.ai_system_prompt
         })
       });
@@ -755,7 +756,7 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Provider URL & Model Form */}
+            {/* Provider URL, Model, & Nama Asisten Form */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
@@ -769,7 +770,7 @@ export const SettingsPage: React.FC = () => {
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
                 />
                 <span className="text-[11px] text-slate-400 mt-1 block">
-                  Format kompatibel OpenAI. Gunakan <code className="text-blue-500">http://127.0.0.1:20128/v1</code> untuk 9router lokal VPS.
+                  Format OpenAI (contoh: <code className="text-blue-500">http://127.0.0.1:20128/v1</code> untuk 9router lokal VPS).
                 </span>
               </div>
 
@@ -785,7 +786,23 @@ export const SettingsPage: React.FC = () => {
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono"
                 />
                 <span className="text-[11px] text-slate-400 mt-1 block">
-                  Contoh: <code className="text-blue-500">antigravity</code>, <code className="text-blue-500">qoder</code>, <code className="text-blue-500">Sk/z-ai/glm-5.2:free</code>, <code className="text-blue-500">gpt-4o-mini</code>
+                  Contoh: <code className="text-blue-500">antigravity</code>, <code className="text-blue-500">qoder</code>, <code className="text-blue-500">gpt-4o-mini</code>
+                </span>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Nama Asisten Sales AI *
+                </label>
+                <input
+                  type="text"
+                  value={settings.ai_assistant_name || ''}
+                  onChange={(e) => setSettings({ ...settings, ai_assistant_name: e.target.value })}
+                  placeholder="Vina"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Nama persona asisten sales dealer saat membalas pesan di WhatsApp (misal: Vina, Siti, Maya, Honda Virtual Assistant).
                 </span>
               </div>
 

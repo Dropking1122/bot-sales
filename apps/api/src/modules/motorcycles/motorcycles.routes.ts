@@ -6,6 +6,7 @@ import {
   updateMotorcycle,
   deleteMotorcycle,
   uploadMotorcycleImages,
+  updateMotorcycleImage,
   deleteMotorcycleImage,
   setPrimaryImage
 } from './motorcycles.controller';
@@ -34,6 +35,12 @@ router.delete(
   authenticate,
   requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN),
   deleteMotorcycleImage
+);
+router.patch(
+  '/:id/images/:imageId',
+  authenticate,
+  requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN),
+  updateMotorcycleImage
 );
 router.patch(
   '/:id/images/:imageId/primary',

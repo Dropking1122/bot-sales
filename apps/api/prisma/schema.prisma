@@ -152,6 +152,7 @@ model MotorcycleImage {
   id           String     @id @default(uuid())
   motorcycleId String
   url          String
+  colorName    String?
   isPrimary    Boolean    @default(false)
   sortOrder    Int        @default(0)
   createdAt    DateTime   @default(now())

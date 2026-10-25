@@ -233,6 +233,7 @@ export async function uploadMotorcycleImages(req: Request, res: Response, next: 
 
     const replace = req.query.replace === 'true' || req.body?.replace === 'true';
     const hasPrimary = motorcycle.images.some((img) => img.isPrimary);
+    const colorName = typeof req.body.colorName === 'string' && req.body.colorName.trim() ? req.body.colorName.trim() : null;
 
     if (replace) {
       await prisma.motorcycleImage.updateMany({
@@ -250,6 +251,7 @@ export async function uploadMotorcycleImages(req: Request, res: Response, next: 
           data: {
             motorcycleId: id,
             url,
+            colorName,
             isPrimary,
             sortOrder: replace ? index : (motorcycle.images.length + index)
           }
@@ -307,6 +309,22 @@ export async function deleteMotorcycleImage(req: Request, res: Response, next: N
     await logAudit(req, 'DELETE_MOTORCYCLE_IMAGE', 'MotorcycleImage', imageId);
 
     return res.json({ success: true, message: 'Gambar berhasil dihapus' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateMotorcycleImage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, imageId } = req.params;
+    const { colorName } = req.body;
+
+    const updated = await prisma.motorcycleImage.update({
+      where: { id: imageId },
+      data: { colorName: typeof colorName === 'string' ? colorName.trim() || null : null }
+    });
+
+    return res.json({ success: true, data: updated });
   } catch (err) {
     next(err);
   }
