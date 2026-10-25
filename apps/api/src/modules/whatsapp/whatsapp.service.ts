@@ -815,7 +815,7 @@ class WhatsAppManager {
       const history = await prisma.message.findMany({
         where: { conversation: { contactId: contact.id } },
         orderBy: { createdAt: 'desc' },
-        take: 6,
+        take: 10,
         select: { senderType: true, content: true }
       });
       history.reverse();

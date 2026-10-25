@@ -9,6 +9,7 @@ export interface AiAgentConfig {
   apiKey: string;
   model: string;
   systemPrompt: string;
+  customFaq: string;
   temperature: number;
   maxTokens: number;
 }
@@ -22,6 +23,34 @@ Tugas Anda:
 5. Bila pelanggan menanyakan simulasi kredit terperinci, anjurkan mengetik format mudah "SIMULASI <nomor motor>" atau tawarkan bantuan untuk disambungkan langsung dengan tim sales kami (ketik "SALES").
 6. Jangan mengarang harga atau promo yang tidak ada pada daftar katalog resmi dealer.`;
 
+const DEFAULT_CUSTOM_FAQ = `[Syarat Berkas Kredit]
+Q: Apa saja syarat pengajuan kredit motor Honda?
+A: Cukup foto e-KTP Pemohon & Penjamin (Suami/Istri/Orang Tua), Kartu Keluarga (KK), dan bukti penghasilan/slip gaji. Berkas bisa dikirim via WA atau dijemput tim survei.
+
+[Waktu Proses Kredit]
+Q: Berapa lama proses approval/persetujuan kredit?
+A: Proses survei leasing rekanan (FIF, Adira, OTO, MCF, BCA Finance) rata-rata 1x24 jam kerja setelah berkas lengkap.
+
+[KTP Daerah / Luar Domisili]
+Q: Apakah bisa beli motor dengan KTP luar daerah?
+A: Bisa Kak! Kami melayani pembelian cash maupun kredit untuk KTP luar daerah selama berdomisili atau bekerja di area operasional dealer kami.
+
+[STNK & BPKB]
+Q: Berapa lama plat nomor, STNK, dan BPKB selesai?
+A: Plat nomor dan STNK motor baru jadi sekitar 14 - 21 hari kerja. Untuk pembelian cash, BPKB jadi sekitar 2 - 3 bulan. Untuk kredit, BPKB tersimpan aman di kantor leasing hingga lunas.
+
+[Garansi Resmi Honda]
+Q: Bagaimana garansi motor baru Honda?
+A: Seluruh motor baru bergaransi resmi Honda AHM: Garansi Rangka 5 tahun tanpa batas kilometer, Garansi Komponen Injeksi PGM-FI 5 tahun / 50.000 km, dan Garansi Mesin 3 tahun / 30.000 km.
+
+[Tukar Tambah / Trade-in]
+Q: Apakah bisa tukar tambah motor lama?
+A: Bisa sekali Kak! Kami menerima tukar tambah motor lama segala merk untuk dijadikan uang muka (DP) motor baru Honda.
+
+[Bonus & Servis Gratis]
+Q: Pembelian motor baru dapat apa saja?
+A: Mendapatkan helm standar Honda, jaket eksklusif, toolkit, dudukan plat, buku servis & garansi, serta kupon servis gratis (KPB) termasuk gratis oli mesin pada servis pertama.`;
+
 export async function getAiConfig(): Promise<AiAgentConfig> {
   const settings = await prisma.botSetting.findMany({
     where: {
@@ -32,6 +61,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
           'ai_api_key',
           'ai_model',
           'ai_system_prompt',
+          'ai_custom_faq',
           'ai_temperature',
           'ai_max_tokens'
         ]
@@ -58,6 +88,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
   const apiKey = map.get('ai_api_key') || fallbackKey;
   const model = map.get('ai_model') || 'antigravity';
   const systemPrompt = map.get('ai_system_prompt') || DEFAULT_SYSTEM_PROMPT;
+  const customFaq = map.get('ai_custom_faq') || DEFAULT_CUSTOM_FAQ;
   const temperature = parseFloat(map.get('ai_temperature') || '0.7') || 0.7;
   const maxTokens = parseInt(map.get('ai_max_tokens') || '400', 10) || 400;
 
@@ -67,6 +98,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
     apiKey,
     model,
     systemPrompt,
+    customFaq,
     temperature,
     maxTokens
   };
@@ -74,7 +106,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
 
 export async function askSalesAiAgent(
   userMessage: string,
-  contact: { name: string; phoneNormalized?: string; interestedMotorcycle?: string | null },
+  contact: { id?: string; name: string; phoneNormalized?: string; phone?: string; interestedMotorcycle?: string | null; internalNotes?: string | null },
   conversationHistory: { senderType: string; content: string }[] = []
 ): Promise<string | null> {
   const config = await getAiConfig();
@@ -107,10 +139,16 @@ export async function askSalesAiAgent(
       .join('\n');
 
     // 2. Ambil info dealer
-    const [addr, hours, dealerPhone] = await Promise.all([
+    const [addr, hours, dealerPhone, activeLead] = await Promise.all([
       prisma.botSetting.findUnique({ where: { key: 'bot_dealer_address' } }),
       prisma.botSetting.findUnique({ where: { key: 'bot_operating_hours' } }),
-      prisma.botSetting.findUnique({ where: { key: 'bot_dealer_phone' } })
+      prisma.botSetting.findUnique({ where: { key: 'bot_dealer_phone' } }),
+      contact.id
+        ? prisma.lead.findFirst({
+            where: { contactId: contact.id },
+            orderBy: { createdAt: 'desc' }
+          })
+        : Promise.resolve(null)
     ]);
 
     const contextInstruction = `
@@ -122,15 +160,21 @@ Kontak Showroom: ${dealerPhone?.value || '-'}
 KATALOG UNIT TERSEDIA:
 ${motorContext}
 
-DATA PELANGGAN:
+--- PROFIL PELANGGAN (MEMORI JANGKA PANJANG) ---
 Nama: ${contact.name || 'Pelanggan'}
-Minat Sebelumnya: ${contact.interestedMotorcycle || 'Belum spesifik'}
--------------------------`;
+Nomor HP/WA: ${contact.phoneNormalized || contact.phone || '-'}
+Motor yang Pernah Diminati: ${contact.interestedMotorcycle || 'Belum spesifik'}
+Status Prospek: ${activeLead?.status || 'BARU'}
+Catatan Sales/Internal: ${contact.internalNotes || activeLead?.notes || 'Tidak ada catatan khusus'}
+
+--- PANDUAN FAQ KHUSUS & KNOWLEDGE BASE DEALER ---
+${config.customFaq}
+--------------------------------------------------`;
 
     const fullSystemPrompt = `${config.systemPrompt}\n\n${contextInstruction}`;
 
-    // 3. Format riwayat pesan (ambil maksimal 6 pesan terakhir)
-    const formattedHistory = conversationHistory.slice(-6).map((m) => ({
+    // 3. Format riwayat pesan (Memori jangka pendek: 10 pesan terakhir)
+    const formattedHistory = conversationHistory.slice(-10).map((m) => ({
       role: m.senderType === 'CUSTOMER' ? 'user' : 'assistant',
       content: m.content
     }));

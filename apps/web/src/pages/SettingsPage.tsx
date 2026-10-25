@@ -857,14 +857,36 @@ export const SettingsPage: React.FC = () => {
                   Instruksi Sistem & Persona Sales AI (System Prompt)
                 </label>
                 <textarea
-                  rows={5}
+                  rows={4}
                   value={settings.ai_system_prompt || ''}
                   onChange={(e) => setSettings({ ...settings, ai_system_prompt: e.target.value })}
-                  placeholder="Anda adalah Vina, konsultan sales dealer motor Honda yang ramah, sopan, dan persuasif. Berikan penjelasan singkat mengenai keunggulan motor, harga OTR, dan rekomendasi cicilan..."
+                  placeholder="Anda adalah Vina, konsultan sales dealer motor Honda yang ramah, sopan, dan persuasif..."
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden"
                 />
                 <span className="text-[11px] text-slate-400 mt-1 block">
-                  💡 *Catatan:* Data seluruh motor (OTR, DP, CC), jam buka dealer, dan riwayat chat 6 pesan terakhir otomatis disuntikkan oleh sistem ke dalam prompt setiap kali pesan masuk.
+                  💡 *Catatan:* Data seluruh katalog motor aktif, profil dealer, serta riwayat chat otomatis disuntikkan oleh sistem ke dalam prompt.
+                </span>
+              </div>
+
+              {/* Custom FAQ & Knowledge Base */}
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Aturan Tanya Jawab Khusus (FAQ & Knowledge Base Dealer)
+                  </label>
+                  <span className="text-[11px] text-blue-500 dark:text-blue-400 font-medium">
+                    Kredit, STNK, KTP Daerah, Garansi, dll.
+                  </span>
+                </div>
+                <textarea
+                  rows={8}
+                  value={settings.ai_custom_faq || ''}
+                  onChange={(e) => setSettings({ ...settings, ai_custom_faq: e.target.value })}
+                  placeholder="[Syarat Kredit]\nQ: Apa syarat kredit?\nA: KTP pemohon, KK, dan slip gaji...\n\n[Garansi]\nQ: Berapa lama garansi rangka?\nA: Garansi rangka 5 tahun tanpa batas kilometer..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden font-mono text-[11.5px] leading-relaxed"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Tambahkan panduan khusus jika dealer memiliki kebijakan tertentu (misal: syarat kredit KTP daerah, lama STNK jadi, promo leasing FIF/Adira, atau program tukar tambah).
                 </span>
               </div>
             </div>
