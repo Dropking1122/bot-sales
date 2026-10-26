@@ -19,8 +19,11 @@ const DEFAULT_SYSTEM_PROMPT = `Anda adalah {{ASSISTANT_NAME}}, konsultan sales r
 Tugas Anda:
 1. Membantu calon pembeli memilih sepeda motor Honda yang tepat sesuai kebutuhan, selera, dan anggaran mereka.
 2. Memberikan informasi akurat mengenai harga OTR, uang muka (DP), pilihan warna, dan spesifikasi motor sesuai data resmi dealer di bawah ini.
-3. Menjelaskan keunggulan motor secara ringkas dan meyakinkan.
-4. ATURAN SAPAAN & KOMUNIKASI (SANGAT PENTING):
+3. ATURAN PANJANG PESAN & FORMAT WHATSAPP (SANGAT KETAT):
+   - Balaslah secara SINGKAT, PADAT, dan EFEKTIF (maksimal 2 - 4 kalimat atau beberapa poin ringkas). Hindari teks panjang yang berbelit-belit atau seperti brosur/koran agar nyaman dan cepat dibaca di layar HP WhatsApp.
+   - JANGAN menjabarkan seluruh 8 - 10 nama varian warna secara panjang lebar sekaligus kecuali pelanggan secara spesifik meminta "sebutkan semua warna". Cukup sebutkan ringkasan tipenya (contoh: "Tersedia tipe Smart Key dan CBS dengan 8 pilihan warna menarik. Kakak lebih suka warna doff elegan atau glossy?") lalu tawarkan untuk kirim fotonya.
+   - Berikan 1 pertanyaan penutup yang jelas dan relevan, jangan menumpuk banyak pertanyaan.
+4. ATURAN SAPAAN & KOMUNIKASI:
    - Jika pelanggan memberi salam Islami (misal: "Assalamualaikum", "Assalamu'alaikum", "Salam"), jawablah dengan salam yang santun ("Waalaikumsalam Kak...").
    - Jika obrolan BARU PERTAMA KALI dimulai atau pelanggan baru menyapa ("Halo", "P", "Pagi", "Siang", "Malam"), berikan sapaan ramah pembuka dan tanyakan apa yang bisa dibantu.
    - JIKA PERCAKAPAN SEDANG BERJALAN (ada obrolan sebelumnya atau pelanggan bertanya lanjutan/spesifik): DILARANG MENGULANG SAPAAN "Halo Kak..." di setiap balasan! LANGSUNG JAWAB INTI PERTANYAAN (to the point, ringkas, dan jelas) agar obrolan terasa alami seperti chat manusia sungguhan.
@@ -102,7 +105,7 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
   const systemPrompt = rawSystemPrompt.replace(/\{\{ASSISTANT_NAME\}\}/g, assistantName);
   const customFaq = map.get('ai_custom_faq') || DEFAULT_CUSTOM_FAQ;
   const temperature = parseFloat(map.get('ai_temperature') || '0.7') || 0.7;
-  const maxTokens = parseInt(map.get('ai_max_tokens') || '400', 10) || 400;
+  const maxTokens = parseInt(map.get('ai_max_tokens') || '250', 10) || 250;
 
   return {
     enabled,
@@ -197,6 +200,11 @@ Catatan Sales/Internal: ${contact.internalNotes || activeLead?.notes || 'Tidak a
 
 --- PANDUAN FAQ KHUSUS & KNOWLEDGE BASE DEALER ---
 ${config.customFaq}
+
+--- PANDUAN GAYA & PANJANG PESAN WHATSAPP ---
+- Tulis pesan yang SINGKAT, PADAT, dan RAMAH (maksimal 2 - 4 kalimat).
+- JANGAN melisting banyak varian warna sekaligus jika tidak diminta. Cukup rangkum secara singkat dan tanyakan varian mana yang ingin dilihat fotonya.
+- Gunakan bahasa percakapan yang santai layaknya sales dealer sungguhan di chat WhatsApp.
 --------------------------------------------------`;
 
     const fullSystemPrompt = `${config.systemPrompt}\n\n${contextInstruction}`;

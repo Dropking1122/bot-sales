@@ -26,6 +26,26 @@ class WhatsAppManager {
   private status: WhatsAppStatus = 'DISCONNECTED';
   private qrCodeDataUrl: string | null = null;
   private isInitializing = false;
+  private debounceBuffers = new Map<
+    string,
+    {
+      contact: any;
+      conversationId: string;
+      lastMsg: WAMessage;
+      texts: string[];
+      timer: NodeJS.Timeout;
+    }
+  >();
+  private inFlightProcessing = new Set<string>();
+  private pendingFollowUps = new Map<
+    string,
+    {
+      contact: any;
+      conversationId: string;
+      lastMsg: WAMessage;
+      texts: string[];
+    }
+  >();
 
   constructor() {
     // Session state
@@ -525,81 +545,148 @@ class WhatsAppManager {
         return;
       }
 
-      // 4. Determine Bot Intent & Reply
-      const botResponse = await this.resolveBotResponse(body, contact);
-
-      if (botResponse) {
-        const payload: BotResponsePayload =
-          typeof botResponse === 'string' ? { text: botResponse } : botResponse;
-
-        if (payload.mediaPath && fs.existsSync(payload.mediaPath)) {
-          let mediaSent = false;
-          try {
-            logger.info({ mediaPath: payload.mediaPath, from: msg.from }, 'Sending motorcycle photo with caption to client');
-            const media = MessageMedia.fromFilePath(payload.mediaPath);
-            // Primary attempt: sendMessage directly to msg.from (avoids quotedMessageId lookup errors)
-            if (this.client) {
-              await this.client.sendMessage(msg.from, media, { caption: payload.text });
-              logger.info('Motorcycle photo sent successfully via sendMessage');
-              mediaSent = true;
-            } else {
-              throw new Error('WhatsApp client is not initialized');
-            }
-          } catch (mediaErr: any) {
-            logger.error(
-              {
-                errName: mediaErr?.name,
-                errMsg: mediaErr?.message,
-                errStack: mediaErr?.stack
-              },
-              'Failed to send media via sendMessage, attempting msg.reply'
-            );
-
-            try {
-              const media = MessageMedia.fromFilePath(payload.mediaPath);
-              await msg.reply(media, undefined, { caption: payload.text });
-              logger.info('Motorcycle photo sent successfully via msg.reply');
-              mediaSent = true;
-            } catch (replyErr: any) {
-              logger.error(
-                {
-                  errName: replyErr?.name,
-                  errMsg: replyErr?.message,
-                  errStack: replyErr?.stack
-                },
-                'Failed to send media via msg.reply, falling back to text with direct image URL'
-              );
-            }
-          }
-
-          if (!mediaSent) {
-            let textWithPhotoLink = payload.text;
-            if (payload.mediaUrl) {
-              const fullUrl = `https://m.revd.dev${payload.mediaUrl}`;
-              textWithPhotoLink = `📷 *Foto Unit Motor:*\n${fullUrl}\n\n` + payload.text;
-            }
-            await msg.reply(textWithPhotoLink);
-          }
-        } else {
-          logger.info({ mediaPath: payload.mediaPath }, 'No valid media path found, sending text only');
-          await msg.reply(payload.text);
-        }
-
-        // Store bot message in DB
-        await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            senderType: 'BOT',
-            content: payload.text,
-            mediaUrl: payload.mediaUrl || null,
-            mediaType: payload.mediaType || (payload.mediaUrl ? 'image/png' : null),
-            status: 'SENT'
-          }
-        });
-      }
+      // 4. Queue Inbound Reply with Debounce Buffer & In-Flight Lock
+      this.queueInboundReply(body, contact, conversation.id, msg);
     } catch (error) {
       logger.error({ error, rawPhone, body }, 'Error handling incoming WA message');
     }
+  }
+
+  private queueInboundReply(body: string, contact: any, conversationId: string, msg: WAMessage): void {
+    const key = contact.id;
+
+    // If an AI reply is currently being generated for this contact, queue it for follow-up
+    if (this.inFlightProcessing.has(key)) {
+      const existing = this.pendingFollowUps.get(key);
+      if (existing) {
+        existing.texts.push(body);
+        existing.lastMsg = msg;
+      } else {
+        this.pendingFollowUps.set(key, {
+          contact,
+          conversationId,
+          lastMsg: msg,
+          texts: [body]
+        });
+      }
+      logger.info({ contactId: key, text: body }, 'Message queued for follow-up (AI in-flight)');
+      return;
+    }
+
+    // Debounce rapid bursts (e.g. user sends 2-3 short messages or typos within 2.5 seconds)
+    const existing = this.debounceBuffers.get(key);
+    if (existing) {
+      clearTimeout(existing.timer);
+      existing.texts.push(body);
+      existing.lastMsg = msg;
+      existing.timer = setTimeout(() => {
+        this.processDebouncedBuffer(key);
+      }, 2500);
+      logger.info({ contactId: key, bufferedCount: existing.texts.length }, 'Appended message to debounce buffer');
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.processDebouncedBuffer(key);
+    }, 2500);
+
+    this.debounceBuffers.set(key, {
+      contact,
+      conversationId,
+      lastMsg: msg,
+      texts: [body],
+      timer
+    });
+  }
+
+  private async processDebouncedBuffer(key: string): Promise<void> {
+    const item = this.debounceBuffers.get(key);
+    this.debounceBuffers.delete(key);
+    if (!item) return;
+
+    this.inFlightProcessing.add(key);
+    try {
+      // Merge buffered texts cleanly (e.g. "all new Honda bear" + "t" => "all new Honda bear \n t")
+      const combinedText = item.texts.filter(Boolean).join('\n').trim();
+      await this.executeBotReply(combinedText, item.contact, item.conversationId, item.lastMsg);
+    } catch (err) {
+      logger.error({ err, contactId: key }, 'Error in processDebouncedBuffer');
+    } finally {
+      this.inFlightProcessing.delete(key);
+
+      // Check if any follow-up arrived while we were processing
+      const pending = this.pendingFollowUps.get(key);
+      if (pending) {
+        this.pendingFollowUps.delete(key);
+        setTimeout(() => {
+          this.queueInboundReply(pending.texts.join('\n'), pending.contact, pending.conversationId, pending.lastMsg);
+        }, 500);
+      }
+    }
+  }
+
+  private async executeBotReply(body: string, contact: any, conversationId: string, msg: WAMessage): Promise<void> {
+    const botResponse = await this.resolveBotResponse(body, contact);
+    if (!botResponse) return;
+
+    const payload: BotResponsePayload =
+      typeof botResponse === 'string' ? { text: botResponse } : botResponse;
+
+    if (payload.mediaPath && fs.existsSync(payload.mediaPath)) {
+      let mediaSent = false;
+      try {
+        logger.info({ mediaPath: payload.mediaPath, from: msg.from }, 'Sending motorcycle photo with caption to client');
+        const media = MessageMedia.fromFilePath(payload.mediaPath);
+        if (this.client) {
+          await this.client.sendMessage(msg.from, media, { caption: payload.text });
+          logger.info('Motorcycle photo sent successfully via sendMessage');
+          mediaSent = true;
+        } else {
+          throw new Error('WhatsApp client is not initialized');
+        }
+      } catch (mediaErr: any) {
+        logger.error(
+          { errName: mediaErr?.name, errMsg: mediaErr?.message },
+          'Failed to send media via sendMessage, attempting msg.reply'
+        );
+
+        try {
+          const media = MessageMedia.fromFilePath(payload.mediaPath);
+          await msg.reply(media, undefined, { caption: payload.text });
+          logger.info('Motorcycle photo sent successfully via msg.reply');
+          mediaSent = true;
+        } catch (replyErr: any) {
+          logger.error(
+            { errName: replyErr?.name, errMsg: replyErr?.message },
+            'Failed to send media via msg.reply, falling back to text with direct image URL'
+          );
+        }
+      }
+
+      if (!mediaSent) {
+        let textWithPhotoLink = payload.text;
+        if (payload.mediaUrl) {
+          const fullUrl = `https://m.revd.dev${payload.mediaUrl}`;
+          textWithPhotoLink = `📷 *Foto Unit Motor:*\n${fullUrl}\n\n` + payload.text;
+        }
+        await msg.reply(textWithPhotoLink);
+      }
+    } else {
+      logger.info({ mediaPath: payload.mediaPath }, 'No valid media path found, sending text only');
+      await msg.reply(payload.text);
+    }
+
+    // Store bot message in DB
+    await prisma.message.create({
+      data: {
+        conversationId,
+        senderType: 'BOT',
+        content: payload.text,
+        mediaUrl: payload.mediaUrl || null,
+        mediaType: payload.mediaType || (payload.mediaUrl ? 'image/png' : null),
+        status: 'SENT'
+      }
+    });
   }
 
   private async resolveBotResponse(text: string, contact: any): Promise<string | BotResponsePayload> {
