@@ -10,7 +10,8 @@ import {
   ShieldAlert,
   Loader2,
   RefreshCw,
-  Trash2
+  Trash2,
+  ArrowLeft
 } from 'lucide-react';
 
 export const InboxPage: React.FC = () => {
@@ -177,7 +178,7 @@ export const InboxPage: React.FC = () => {
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col sm:flex-row bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
       {/* Left Column: Conversations List */}
-      <div className="w-full sm:w-80 md:w-96 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
+      <div className={`${selectedConv ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 md:w-96 border-r border-slate-200 dark:border-slate-800 flex-col shrink-0`}>
         <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -255,18 +256,26 @@ export const InboxPage: React.FC = () => {
       </div>
 
       {/* Right Column: Chat Box */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`${!selectedConv ? 'hidden sm:flex' : 'flex'} flex-1 flex-col min-w-0`}>
         {selectedConv ? (
           <>
             {/* Chat Header */}
             <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
-              <div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setSelectedConv(null); setMessages([]); }}
+                  className="sm:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <div>
                 <p className="font-bold text-sm text-slate-900 dark:text-white">
                   {selectedConv.contact?.name || 'Pelanggan'}
                 </p>
                 <p className="font-mono text-xs text-slate-500">
                   {selectedConv.contact?.phoneNormalized || selectedConv.contact?.phone}
                 </p>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">

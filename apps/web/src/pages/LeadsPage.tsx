@@ -130,16 +130,16 @@ export const LeadsPage: React.FC = () => {
       {/* Leads Table */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[700px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
-                <th className="py-3 px-4">Calon Pembeli</th>
-                <th className="py-3 px-4">Motor Diminati</th>
-                <th className="py-3 px-4">Rencana DP & Tenor</th>
-                <th className="py-3 px-4">Sales PIC</th>
-                <th className="py-3 px-4">Status Prospek</th>
-                <th className="py-3 px-4">Catatan</th>
-                <th className="py-3 px-4">Tanggal Masuk</th>
+                <th className="py-3 px-4 whitespace-nowrap">Calon Pembeli</th>
+                <th className="py-3 px-4 whitespace-nowrap">Motor Diminati</th>
+                <th className="py-3 px-4 whitespace-nowrap">Rencana DP &amp; Tenor</th>
+                <th className="py-3 px-4 whitespace-nowrap">Sales PIC</th>
+                <th className="py-3 px-4 whitespace-nowrap">Status Prospek</th>
+                <th className="py-3 px-4 whitespace-nowrap">Catatan</th>
+                <th className="py-3 px-4 whitespace-nowrap">Tanggal Masuk</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

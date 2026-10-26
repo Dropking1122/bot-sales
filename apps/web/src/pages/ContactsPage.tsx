@@ -179,7 +179,7 @@ export const ContactsPage: React.FC = () => {
       {/* Table */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[800px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
                 <th className="py-3 px-4 w-10">
@@ -190,13 +190,13 @@ export const ContactsPage: React.FC = () => {
                     className="rounded text-blue-600 focus:ring-blue-500"
                   />
                 </th>
-                <th className="py-3 px-4">Nama</th>
-                <th className="py-3 px-4">No. WhatsApp</th>
-                <th className="py-3 px-4">Tag</th>
-                <th className="py-3 px-4">Minat Motor</th>
-                <th className="py-3 px-4">Sumber</th>
-                <th className="py-3 px-4">Persetujuan</th>
-                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 whitespace-nowrap">Nama</th>
+                <th className="py-3 px-4 whitespace-nowrap">No. WhatsApp</th>
+                <th className="py-3 px-4 whitespace-nowrap">Tag</th>
+                <th className="py-3 px-4 whitespace-nowrap">Minat Motor</th>
+                <th className="py-3 px-4 whitespace-nowrap">Sumber</th>
+                <th className="py-3 px-4 whitespace-nowrap">Persetujuan</th>
+                <th className="py-3 px-4 whitespace-nowrap">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

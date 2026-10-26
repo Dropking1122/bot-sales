@@ -176,16 +176,16 @@ export const BroadcastsPage: React.FC = () => {
       {/* Campaigns Table */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[800px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
-                <th className="py-3 px-4">Nama Kampanye</th>
-                <th className="py-3 px-4">Tipe</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Target / Sukses / Gagal</th>
-                <th className="py-3 px-4">Progres</th>
-                <th className="py-3 px-4">Waktu Dibuat</th>
-                <th className="py-3 px-4 text-right">Aksi</th>
+                <th className="py-3 px-4 whitespace-nowrap">Nama Kampanye</th>
+                <th className="py-3 px-4 whitespace-nowrap">Tipe</th>
+                <th className="py-3 px-4 whitespace-nowrap">Status</th>
+                <th className="py-3 px-4 whitespace-nowrap">Target / Sukses / Gagal</th>
+                <th className="py-3 px-4 whitespace-nowrap">Progres</th>
+                <th className="py-3 px-4 whitespace-nowrap">Waktu Dibuat</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

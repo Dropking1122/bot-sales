@@ -502,17 +502,17 @@ export const MotorcyclesPage: React.FC = () => {
       {/* Table */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[800px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
-                <th className="py-3 px-4">SKU / Motor</th>
-                <th className="py-3 px-4">Merek</th>
-                <th className="py-3 px-4">Kategori & Kondisi</th>
-                <th className="py-3 px-4">Harga OTR</th>
-                <th className="py-3 px-4">DP Min</th>
-                <th className="py-3 px-4">Stok</th>
-                <th className="py-3 px-4 text-center">Varian & Foto</th>
-                <th className="py-3 px-4 text-right">Aksi</th>
+                <th className="py-3 px-4 whitespace-nowrap">SKU / Motor</th>
+                <th className="py-3 px-4 whitespace-nowrap">Merek</th>
+                <th className="py-3 px-4 whitespace-nowrap">Kategori &amp; Kondisi</th>
+                <th className="py-3 px-4 whitespace-nowrap">Harga OTR</th>
+                <th className="py-3 px-4 whitespace-nowrap">DP Min</th>
+                <th className="py-3 px-4 whitespace-nowrap">Stok</th>
+                <th className="py-3 px-4 text-center whitespace-nowrap">Varian &amp; Foto</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -662,7 +662,7 @@ export const MotorcyclesPage: React.FC = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">SKU / Kode Motor *</label>
                   <input
@@ -703,7 +703,7 @@ export const MotorcyclesPage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tahun</label>
                   <input
@@ -750,7 +750,7 @@ export const MotorcyclesPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Harga OTR (Rp) *</label>
                   <input

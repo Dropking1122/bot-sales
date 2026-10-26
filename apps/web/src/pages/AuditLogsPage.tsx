@@ -41,15 +41,15 @@ export const AuditLogsPage: React.FC = () => {
       {/* Logs Table */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[700px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
-                <th className="py-3 px-4">Waktu</th>
-                <th className="py-3 px-4">Pengguna / Aktor</th>
-                <th className="py-3 px-4">Aksi</th>
-                <th className="py-3 px-4">Entitas</th>
-                <th className="py-3 px-4">Detail Perubahan</th>
-                <th className="py-3 px-4">IP Address</th>
+                <th className="py-3 px-4 whitespace-nowrap">Waktu</th>
+                <th className="py-3 px-4 whitespace-nowrap">Pengguna / Aktor</th>
+                <th className="py-3 px-4 whitespace-nowrap">Aksi</th>
+                <th className="py-3 px-4 whitespace-nowrap">Entitas</th>
+                <th className="py-3 px-4 whitespace-nowrap">Detail Perubahan</th>
+                <th className="py-3 px-4 whitespace-nowrap">IP Address</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
