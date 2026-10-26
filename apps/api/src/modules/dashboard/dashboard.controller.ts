@@ -84,7 +84,7 @@ export async function getNotifications(_req: Request, res: Response, next: NextF
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [notifMessages, recentContacts, activeCampaigns] = await Promise.all([
+    const [notifMessages, recentContacts, activeCampaigns, securityAndErrorLogs] = await Promise.all([
       prisma.message.findMany({
         take: 20,
         where: {
@@ -110,6 +110,14 @@ export async function getNotifications(_req: Request, res: Response, next: NextF
       }),
       prisma.broadcastCampaign.findMany({
         take: 3,
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.auditLog.findMany({
+        take: 10,
+        where: {
+          entity: { in: ['SECURITY_ALERT', 'SYSTEM_ERROR'] },
+          createdAt: { gte: sevenDaysAgo }
+        },
         orderBy: { createdAt: 'desc' }
       })
     ]);
@@ -166,7 +174,35 @@ export async function getNotifications(_req: Request, res: Response, next: NextF
       }
     });
 
-    // 3. Map campaigns
+    // 3. Map security attacks and system error logs
+    securityAndErrorLogs.forEach((log) => {
+      const isSecurity = log.entity === 'SECURITY_ALERT';
+      const details = (log.details as any) || {};
+
+      if (isSecurity) {
+        notifications.push({
+          id: `sec-${log.id}`,
+          title: `🚨 Serangan: ${details.attackType || log.action}`,
+          message: `IP: ${log.ipAddress || '-'} • Target: ${details.path || '-'}`,
+          type: 'system',
+          time: log.createdAt.toISOString(),
+          link: '/audit-logs?entity=SECURITY_ALERT',
+          read: false
+        });
+      } else {
+        notifications.push({
+          id: `err-${log.id}`,
+          title: `⚠️ Error: ${details.message || log.action}`,
+          message: `${details.method || ''} ${details.path || ''} - ${details.message || 'Server error'}`,
+          type: 'system',
+          time: log.createdAt.toISOString(),
+          link: '/audit-logs?entity=SYSTEM_ERROR',
+          read: false
+        });
+      }
+    });
+
+    // 4. Map campaigns
     activeCampaigns.forEach((camp) => {
       notifications.push({
         id: `camp-${camp.id}`,

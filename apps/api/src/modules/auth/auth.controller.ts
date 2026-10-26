@@ -16,15 +16,27 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     });
 
     if (!admin) {
+      logAudit(req, 'FAILED_LOGIN', 'SECURITY_ALERT', null, {
+        email: data.email,
+        reason: 'User not found'
+      }).catch(() => {});
       return res.status(401).json({ success: false, message: 'Email atau password salah' });
     }
 
     if (!admin.isActive) {
+      logAudit(req, 'SUSPENDED_LOGIN_ATTEMPT', 'SECURITY_ALERT', admin.id, {
+        email: data.email,
+        reason: 'Account suspended'
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: 'Akun telah dinonaktifkan' });
     }
 
     const isMatch = await bcrypt.compare(data.password, admin.passwordHash);
     if (!isMatch) {
+      logAudit(req, 'FAILED_LOGIN', 'SECURITY_ALERT', admin.id, {
+        email: data.email,
+        reason: 'Wrong password'
+      }).catch(() => {});
       return res.status(401).json({ success: false, message: 'Email atau password salah' });
     }
 

@@ -25,6 +25,8 @@ import { waManager } from './modules/whatsapp/whatsapp.service';
 import { settingsRouter } from './modules/settings/settings.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
 import { auditLogsRouter } from './modules/audit-logs/audit-logs.routes';
+import { securityGuard } from './middleware/securityGuard';
+import { logAudit } from './utils/audit';
 
 import { startBroadcastWorker } from './jobs/broadcastWorker';
 
@@ -61,6 +63,9 @@ app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Web Application Firewall / Cyber Attack detection
+app.use(securityGuard);
 
 // Static files ONLY for uploaded images & media (protects whatsapp-session and exports from public access)
 app.use('/storage/uploads', express.static(config.storage.uploadsDir));

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { logger } from '../config/logger';
+import { logAudit } from '../utils/audit';
 
 export class AppError extends Error {
   statusCode: number;
@@ -54,6 +55,16 @@ export function errorHandler(
       });
     }
   }
+
+  // Record internal 500 server errors in AuditLog for instant admin visibility
+  logAudit(req, 'SERVER_ERROR', 'SYSTEM_ERROR', null, {
+    message: err?.message || 'Unknown Server Error',
+    name: err?.name,
+    code: err?.code,
+    stack: typeof err?.stack === 'string' ? err.stack.split('\n').slice(0, 4).join('\n') : undefined,
+    path: req.originalUrl || req.path,
+    method: req.method
+  }).catch(() => {});
 
   return res.status(500).json({
     success: false,
