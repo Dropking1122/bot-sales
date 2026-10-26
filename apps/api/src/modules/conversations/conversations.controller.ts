@@ -133,7 +133,9 @@ export async function sendManualReply(req: Request, res: Response, next: NextFun
       where: { id },
       data: {
         lastMessageAt: new Date(),
-        assignedToAdminId: req.user!.id
+        assignedToAdminId: req.user!.id,
+        isBotActive: false,
+        status: 'HANDOFF'
       }
     });
 

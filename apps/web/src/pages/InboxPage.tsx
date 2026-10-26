@@ -135,6 +135,7 @@ export const InboxPage: React.FC = () => {
 
       if (res.success && res.data) {
         setMessages((prev) => [...prev, res.data]);
+        setSelectedConv((prev: any) => prev ? { ...prev, isBotActive: false, status: 'HANDOFF' } : null);
         setReplyText('');
         setTimeout(() => scrollToBottom('smooth'), 50);
         loadConversations(false);

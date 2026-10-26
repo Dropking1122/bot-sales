@@ -132,6 +132,22 @@ export async function getNotifications(_req: Request, res: Response, next: NextF
       read: boolean;
     }> = [];
 
+    // 0. Alert jika koneksi WhatsApp terputus atau QR expired
+    const currentWa = waManager.getStatus();
+    if (currentWa.status === 'DISCONNECTED' || currentWa.status === 'QR_READY') {
+      notifications.push({
+        id: 'wa-disconnected-alert',
+        title: '⚠️ WhatsApp Terputus!',
+        message: currentWa.status === 'QR_READY'
+          ? 'Sesi WhatsApp memerlukan scan QR ulang untuk menghubungkan bot.'
+          : 'Koneksi WhatsApp terputus. Klik untuk membuka pengaturan dan menghubungkan kembali.',
+        type: 'system',
+        time: new Date().toISOString(),
+        link: '/settings',
+        read: false
+      });
+    }
+
     const seenContactIds = new Set<string>();
 
     // 1. Process client baru & chat setelah inaktif
