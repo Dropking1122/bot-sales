@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/db';
+import { config } from '../../config/env';
 import { MotorcycleSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from '@bot-sales/shared';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
@@ -287,7 +288,7 @@ export async function deleteMotorcycleImage(req: Request, res: Response, next: N
 
     // Try to remove file from disk
     const filename = path.basename(image.url);
-    const filePath = path.join(process.cwd(), '../../storage/uploads/motorcycles', filename);
+    const filePath = path.join(config.storage.uploadsDir, 'motorcycles', filename);
     if (fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);

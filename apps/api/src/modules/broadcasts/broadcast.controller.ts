@@ -3,7 +3,7 @@ import { prisma } from '../../config/db';
 import { BroadcastCampaignSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, isValidPhoneNumber, sanitizeForExcel } from '@bot-sales/shared';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
-import { resolveBroadcastRecipients, interpolateTemplate } from './broadcast.service';
+import { resolveBroadcastRecipients, interpolateTemplate, computeMotorcycleCicilan } from './broadcast.service';
 import ExcelJS from 'exceljs';
 
 export async function listCampaigns(req: Request, res: Response, next: NextFunction) {
@@ -107,10 +107,12 @@ export async function createCampaign(req: Request, res: Response, next: NextFunc
         }
       });
 
+      const precomputedCicilan = await computeMotorcycleCicilan(motorcycle);
+
       // Prepare recipients with personalized message snapshot and idempotency key (batch insert)
       const recipientData = await Promise.all(
         recipients.map(async (r) => {
-          const personalized = await interpolateTemplate(data.messageTemplate, r, motorcycle);
+          const personalized = await interpolateTemplate(data.messageTemplate, r, motorcycle, precomputedCicilan);
           const resolvedPhone =
             isValidPhoneNumber(r.phoneNormalized)
               ? r.phoneNormalized
@@ -167,10 +169,11 @@ export async function previewCampaignRecipients(req: Request, res: Response, nex
       });
     }
 
+    const precomputedCicilan = await computeMotorcycleCicilan(motorcycle);
     const samplePreviews = [];
     for (let i = 0; i < Math.min(3, recipients.length); i++) {
       const r = recipients[i];
-      const msg = await interpolateTemplate(messageTemplate || '', r, motorcycle);
+      const msg = await interpolateTemplate(messageTemplate || '', r, motorcycle, precomputedCicilan);
       samplePreviews.push({
         contactName: r.name,
         phone: r.phoneNormalized,

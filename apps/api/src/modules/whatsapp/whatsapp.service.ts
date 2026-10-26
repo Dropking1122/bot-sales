@@ -447,18 +447,33 @@ class WhatsAppManager {
         rawPhone;
 
       if (!contact) {
-        contact = await prisma.contact.create({
-          data: {
-            name: resolvedName,
-            phone: rawPhone,
-            phoneNormalized: normalizedPhone,
-            source: 'WHATSAPP_BOT',
-            consentStatus: 'GRANTED',
-            consentSource: 'CHAT_INITIATED',
-            consentAt: new Date(),
-            internalNotes: targetJid.endsWith('@lid') ? `[LID: ${targetJid}]` : undefined
+        try {
+          contact = await prisma.contact.create({
+            data: {
+              name: resolvedName,
+              phone: rawPhone,
+              phoneNormalized: normalizedPhone,
+              source: 'WHATSAPP_BOT',
+              consentStatus: 'GRANTED',
+              consentSource: 'CHAT_INITIATED',
+              consentAt: new Date(),
+              internalNotes: targetJid.endsWith('@lid') ? `[LID: ${targetJid}]` : undefined
+            }
+          });
+        } catch (createErr: any) {
+          if (createErr?.code === 'P2002') {
+            contact = await prisma.contact.findFirst({
+              where: {
+                OR: [
+                  { phoneNormalized: normalizedPhone },
+                  { phone: rawPhone },
+                  { phone: targetJid }
+                ]
+              }
+            });
           }
-        });
+          if (!contact) throw createErr;
+        }
       } else {
         const hasLidPhone = contact.phone.includes('@lid') || !isValidPhoneNumber(contact.phone);
         const canUpgradePhone = realPhone && isValidPhoneNumber(realPhone);
@@ -492,25 +507,38 @@ class WhatsAppManager {
       });
 
       if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: {
-            contactId: contact.id,
-            status: 'ACTIVE',
-            isBotActive: true
-          }
-        });
+        try {
+          conversation = await prisma.conversation.create({
+            data: {
+              contactId: contact.id,
+              status: 'ACTIVE',
+              isBotActive: true
+            }
+          });
+        } catch (convErr: any) {
+          conversation = await prisma.conversation.findFirst({
+            where: { contactId: contact.id }
+          });
+          if (!conversation) throw convErr;
+        }
       }
 
-      // Record incoming message in DB
-      await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          senderType: 'CUSTOMER',
-          content: body,
-          waMessageId: msg.id.id,
-          status: 'DELIVERED'
+      // Record incoming message in DB (gracefully ignore duplicate waMessageId from WA retries)
+      try {
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            senderType: 'CUSTOMER',
+            content: body,
+            waMessageId: msg.id.id,
+            status: 'DELIVERED'
+          }
+        });
+      } catch (msgErr: any) {
+        if (msgErr?.code !== 'P2002') {
+          logger.warn({ msgErr }, 'Error saving incoming message');
         }
-      });
+      }
 
       await prisma.conversation.update({
         where: { id: conversation.id },
@@ -527,16 +555,20 @@ class WhatsAppManager {
       });
 
       if (!activeLead) {
-        activeLead = await prisma.lead.create({
-          data: {
-            contactId: contact.id,
-            customerName: contact.name || 'Prospek WhatsApp',
-            phone: contact.phoneNormalized || contact.phone,
-            status: 'BARU',
-            notes: `Inbound chat WhatsApp: "${body.slice(0, 100)}"`
-          }
-        });
-        logger.info({ leadId: activeLead.id, customer: contact.name, phone: contact.phoneNormalized }, 'Lead automatically created for inbound chat');
+        try {
+          activeLead = await prisma.lead.create({
+            data: {
+              contactId: contact.id,
+              customerName: contact.name || 'Prospek WhatsApp',
+              phone: contact.phoneNormalized || contact.phone,
+              status: 'BARU',
+              notes: `Inbound chat WhatsApp: "${body.slice(0, 100)}"`
+            }
+          });
+          logger.info({ leadId: activeLead.id, customer: contact.name, phone: contact.phoneNormalized }, 'Lead automatically created for inbound chat');
+        } catch (leadErr: any) {
+          logger.debug({ leadErr }, 'Lead concurrent creation handled');
+        }
       }
 
       // 3. If bot is deactivated (Sales takeover), skip auto-reply
@@ -669,11 +701,31 @@ class WhatsAppManager {
           const fullUrl = `https://m.revd.dev${payload.mediaUrl}`;
           textWithPhotoLink = `📷 *Foto Unit Motor:*\n${fullUrl}\n\n` + payload.text;
         }
-        await msg.reply(textWithPhotoLink);
+        let fallbackSent = false;
+        if (this.client) {
+          try {
+            await this.client.sendMessage(msg.from, textWithPhotoLink);
+            fallbackSent = true;
+          } catch (e) {}
+        }
+        if (!fallbackSent) {
+          await msg.reply(textWithPhotoLink);
+        }
       }
     } else {
       logger.info({ mediaPath: payload.mediaPath }, 'No valid media path found, sending text only');
-      await msg.reply(payload.text);
+      let textSent = false;
+      if (this.client) {
+        try {
+          await this.client.sendMessage(msg.from, payload.text);
+          textSent = true;
+        } catch (sendErr: any) {
+          logger.warn({ err: sendErr?.message, from: msg.from }, 'Failed to send text via sendMessage, falling back to msg.reply');
+        }
+      }
+      if (!textSent) {
+        await msg.reply(payload.text);
+      }
     }
 
     // Store bot message in DB
@@ -687,6 +739,12 @@ class WhatsAppManager {
         status: 'SENT'
       }
     });
+
+    // Update conversation lastMessageAt so inbox stays sorted
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() }
+    }).catch((err) => logger.warn({ err }, 'Failed to update conversation lastMessageAt'));
   }
 
   private async resolveBotResponse(text: string, contact: any): Promise<string | BotResponsePayload> {
@@ -924,23 +982,19 @@ class WhatsAppManager {
           cleanAiReply = aiReply.replace(/\[(?:FOTO|GAMBAR):\s*[^\]]+\]/gi, '').trim();
         }
 
-        // Also check if customer message explicitly asked for a photo/picture
+        let resolvedMotor: any = null;
+
+        // Check if customer message explicitly asked for a photo/picture
         const wantsPhoto = /foto|gambar|pic|penampakan|liat|lihat|spill|bentuk/i.test(text);
-        if (!targetMotorName && wantsPhoto) {
-          const matchedInUserMsg = await this.findMotorcycleFromText(text);
-          if (matchedInUserMsg) {
-            targetMotorName = matchedInUserMsg.name;
-          } else if (contact.interestedMotorcycle) {
-            const matchedInInterest = await this.findMotorcycleFromText(contact.interestedMotorcycle);
-            if (matchedInInterest) {
-              targetMotorName = matchedInInterest.name;
-            }
-          } else {
-            // Check if AI mentioned a motorcycle in its answer
-            const matchedInAi = await this.findMotorcycleFromText(cleanAiReply);
-            if (matchedInAi) {
-              targetMotorName = matchedInAi.name;
-            }
+        if (targetMotorName) {
+          resolvedMotor = await this.findMotorcycleFromText(targetMotorName);
+        } else if (wantsPhoto) {
+          resolvedMotor = await this.findMotorcycleFromText(text);
+          if (!resolvedMotor && contact.interestedMotorcycle) {
+            resolvedMotor = await this.findMotorcycleFromText(contact.interestedMotorcycle);
+          }
+          if (!resolvedMotor) {
+            resolvedMotor = await this.findMotorcycleFromText(cleanAiReply);
           }
         }
 
@@ -960,18 +1014,15 @@ class WhatsAppManager {
           }
         }
 
-        if (targetMotorName) {
-          const motor = await this.findMotorcycleFromText(targetMotorName);
-          if (motor) {
-            const photo = this.getMotorcyclePhoto(motor, requestedColor || undefined);
-            if (photo.mediaPath) {
-              return {
-                text: cleanAiReply,
-                mediaPath: photo.mediaPath,
-                mediaUrl: photo.mediaUrl,
-                mediaType: 'image/png'
-              };
-            }
+        if (resolvedMotor) {
+          const photo = this.getMotorcyclePhoto(resolvedMotor, requestedColor || undefined);
+          if (photo.mediaPath) {
+            return {
+              text: cleanAiReply,
+              mediaPath: photo.mediaPath,
+              mediaUrl: photo.mediaUrl,
+              mediaType: 'image/png'
+            };
           }
         }
 
@@ -1499,6 +1550,14 @@ class WhatsAppManager {
   }
 
   public async disconnect(): Promise<void> {
+    // Clear pending debounce buffers and timers to prevent memory leaks and orphaned callbacks
+    for (const entry of this.debounceBuffers.values()) {
+      clearTimeout(entry.timer);
+    }
+    this.debounceBuffers.clear();
+    this.inFlightProcessing.clear();
+    this.pendingFollowUps.clear();
+
     if (this.client) {
       try {
         await this.client.destroy();

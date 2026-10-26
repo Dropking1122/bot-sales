@@ -54,10 +54,27 @@ export async function resolveBroadcastRecipients(filter: RecipientFilter) {
   return contacts;
 }
 
+export async function computeMotorcycleCicilan(motorcycle?: any): Promise<string | undefined> {
+  if (!motorcycle) return undefined;
+  try {
+    const otr = Number(motorcycle.priceOtr);
+    const dp = Number(motorcycle.minDp) || otr * 0.1;
+    const sim = await calculateFinancing({
+      hargaOtr: otr,
+      dpAmount: dp,
+      tenorMonths: 35
+    });
+    return formatRupiah(sim.monthlyInstallment);
+  } catch (e) {
+    return 'Hubungi sales';
+  }
+}
+
 export async function interpolateTemplate(
   template: string,
   contact: { name: string; interestedMotorcycle?: string | null },
-  motorcycle?: any
+  motorcycle?: any,
+  precomputedCicilan?: string
 ): Promise<string> {
   let message = template;
 
@@ -72,18 +89,22 @@ export async function interpolateTemplate(
     message = message.replace(/\{\{harga_motor\}\}/gi, formatRupiah(Number(motorcycle.priceOtr)));
     message = message.replace(/\{\{dp_motor\}\}/gi, formatRupiah(Number(motorcycle.minDp || 0)));
 
-    // Calculate installment estimate if 35 months tenor
-    try {
-      const otr = Number(motorcycle.priceOtr);
-      const dp = Number(motorcycle.minDp) || otr * 0.1;
-      const sim = await calculateFinancing({
-        hargaOtr: otr,
-        dpAmount: dp,
-        tenorMonths: 35
-      });
-      message = message.replace(/\{\{cicilan_motor\}\}/gi, formatRupiah(sim.monthlyInstallment));
-    } catch (e) {
-      message = message.replace(/\{\{cicilan_motor\}\}/gi, 'Hubungi sales');
+    if (precomputedCicilan !== undefined) {
+      message = message.replace(/\{\{cicilan_motor\}\}/gi, precomputedCicilan);
+    } else {
+      // Calculate installment estimate if 35 months tenor
+      try {
+        const otr = Number(motorcycle.priceOtr);
+        const dp = Number(motorcycle.minDp) || otr * 0.1;
+        const sim = await calculateFinancing({
+          hargaOtr: otr,
+          dpAmount: dp,
+          tenorMonths: 35
+        });
+        message = message.replace(/\{\{cicilan_motor\}\}/gi, formatRupiah(sim.monthlyInstallment));
+      } catch (e) {
+        message = message.replace(/\{\{cicilan_motor\}\}/gi, 'Hubungi sales');
+      }
     }
   }
 

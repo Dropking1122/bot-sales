@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/db';
+import { config } from '../../config/env';
 import { AppError } from '../../middleware/errorHandler';
 import {
   generateMotorcycleTemplateBuffer,
@@ -146,7 +147,7 @@ export async function executeMotorcycleImport(req: Request, res: Response, next:
     }
 
     const safeFileId = path.basename(String(fileId));
-    const filePath = path.join(process.cwd(), '../../storage/uploads/imports', safeFileId);
+    const filePath = path.join(config.storage.uploadsDir, 'imports', safeFileId);
     if (!fs.existsSync(filePath)) {
       throw new AppError('File tidak ditemukan atau telah kedaluwarsa', 404);
     }
@@ -413,7 +414,7 @@ export async function executeContactImport(req: Request, res: Response, next: Ne
     }
 
     const safeFileId = path.basename(String(fileId));
-    const filePath = path.join(process.cwd(), '../../storage/uploads/imports', safeFileId);
+    const filePath = path.join(config.storage.uploadsDir, 'imports', safeFileId);
     if (!fs.existsSync(filePath)) {
       throw new AppError('File tidak ditemukan', 404);
     }
