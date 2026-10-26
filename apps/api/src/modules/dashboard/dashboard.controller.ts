@@ -81,23 +81,32 @@ export async function getDashboardSummary(_req: Request, res: Response, next: Ne
 
 export async function getNotifications(_req: Request, res: Response, next: NextFunction) {
   try {
-    const [recentLeads, recentMessages, activeCampaigns] = await Promise.all([
-      prisma.lead.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          motorcycle: { select: { name: true } }
-        }
-      }),
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [notifMessages, recentContacts, activeCampaigns] = await Promise.all([
       prisma.message.findMany({
-        take: 5,
-        where: { senderType: 'CUSTOMER' },
+        take: 20,
+        where: {
+          senderType: 'CUSTOMER',
+          OR: [
+            { status: { in: ['UNREAD_NEW_CLIENT', 'UNREAD_INACTIVE'] } },
+            { createdAt: { gte: sevenDaysAgo } }
+          ]
+        },
         orderBy: { createdAt: 'desc' },
         include: {
           conversation: {
             include: { contact: true }
           }
         }
+      }),
+      prisma.contact.findMany({
+        take: 10,
+        where: {
+          createdAt: { gte: twoDaysAgo }
+        },
+        orderBy: { createdAt: 'desc' }
       }),
       prisma.broadcastCampaign.findMany({
         take: 3,
@@ -115,33 +124,49 @@ export async function getNotifications(_req: Request, res: Response, next: NextF
       read: boolean;
     }> = [];
 
-    // Map leads
-    recentLeads.forEach((lead) => {
-      notifications.push({
-        id: `lead-${lead.id}`,
-        title: `Lead ${lead.status}: ${lead.customerName || 'Prospek Baru'}`,
-        message: `Minat: ${lead.motorcycle?.name || 'Unit Motor'} • Kontak: ${lead.phone}`,
-        type: 'lead',
-        time: lead.createdAt.toISOString(),
-        link: '/leads',
-        read: lead.status !== 'BARU'
-      });
+    const seenContactIds = new Set<string>();
+
+    // 1. Process client baru & chat setelah inaktif
+    notifMessages.forEach((msg) => {
+      const contact = msg.conversation?.contact;
+      if (contact) seenContactIds.add(contact.id);
+      const contactName = contact?.name || contact?.phoneNormalized || 'Pelanggan';
+      const isNewClient = msg.status === 'UNREAD_NEW_CLIENT';
+      const isInactive = msg.status === 'UNREAD_INACTIVE';
+      const isUnread = isNewClient || isInactive;
+
+      // Filter: only include messages that were flagged as new client, inactive re-activation, or unread
+      if (isNewClient || isInactive || msg.status === 'READ') {
+        notifications.push({
+          id: `msg-${msg.id}`,
+          title: isNewClient
+            ? `👤 Client Baru: ${contactName}`
+            : `💬 Chat Re-aktif: ${contactName}`,
+          message: msg.content.length > 55 ? msg.content.substring(0, 55) + '...' : msg.content,
+          type: isNewClient ? 'lead' : 'message',
+          time: msg.createdAt.toISOString(),
+          link: '/inbox',
+          read: !isUnread
+        });
+      }
     });
 
-    // Map messages
-    recentMessages.forEach((msg) => {
-      notifications.push({
-        id: `msg-${msg.id}`,
-        title: `Pesan: ${msg.conversation?.contact?.name || msg.conversation?.contact?.phone || 'Konsumen'}`,
-        message: msg.content.length > 55 ? msg.content.substring(0, 55) + '...' : msg.content,
-        type: 'message',
-        time: msg.createdAt.toISOString(),
-        link: '/inbox',
-        read: msg.status === 'READ'
-      });
+    // 2. Process new contacts from other sources or without chat yet
+    recentContacts.forEach((c) => {
+      if (!seenContactIds.has(c.id)) {
+        notifications.push({
+          id: `contact-${c.id}`,
+          title: `👤 Client Baru: ${c.name || c.phoneNormalized}`,
+          message: `Kontak baru masuk via ${c.source || 'WhatsApp'} (${c.phoneNormalized})`,
+          type: 'lead',
+          time: c.createdAt.toISOString(),
+          link: '/inbox',
+          read: false
+        });
+      }
     });
 
-    // Map campaigns
+    // 3. Map campaigns
     activeCampaigns.forEach((camp) => {
       notifications.push({
         id: `camp-${camp.id}`,

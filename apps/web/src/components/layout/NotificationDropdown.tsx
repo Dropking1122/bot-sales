@@ -11,6 +11,8 @@ import {
   Radio,
   ShieldCheck,
   Clock,
+  Volume2,
+  VolumeX,
   X
 } from 'lucide-react';
 
@@ -24,31 +26,127 @@ interface NotificationItem {
   read: boolean;
 }
 
+function playNotificationChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    // Tone 1: 587.33 Hz (D5)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now);
+    gain1.gain.setValueAtTime(0.15, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.25);
+
+    // Tone 2: 880 Hz (A5)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, now + 0.12);
+    gain2.gain.setValueAtTime(0.18, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.12);
+    osc2.stop(now + 0.5);
+  } catch {
+    // Autoplay policy restriction
+  }
+}
+
 export const NotificationDropdown: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem('dms_notif_sound') !== 'false';
+  });
+  const [browserNotifEnabled, setBrowserNotifEnabled] = useState(() => {
+    return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+  });
+
+  const prevUnreadRef = useRef<number | null>(null);
+  const originalTitleRef = useRef<string>(typeof document !== 'undefined' ? document.title : 'DMS');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    localStorage.setItem('dms_notif_sound', String(next));
+    if (next) playNotificationChime();
+  };
+
+  const requestBrowserPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setBrowserNotifEnabled(true);
+        playNotificationChime();
+        new Notification('Notifikasi Dealer Aktif', {
+          body: 'Anda akan menerima pemberitahuan instan saat ada client baru atau chat masuk.',
+          icon: '/favicon.ico'
+        });
+      }
+    }
+  };
 
   const fetchNotifications = async () => {
     try {
       const res = await apiRequest('/dashboard/notifications');
       if (res.success && res.data) {
-        setNotifications(res.data.notifications || []);
-        setUnreadCount(res.data.unreadCount || 0);
+        const list: NotificationItem[] = res.data.notifications || [];
+        const count: number = res.data.unreadCount || 0;
+        setNotifications(list);
+        setUnreadCount(count);
+
+        // Check if new notifications arrived (trigger audio chime & browser alert)
+        if (prevUnreadRef.current !== null && count > prevUnreadRef.current) {
+          if (soundEnabled) {
+            playNotificationChime();
+          }
+
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            const latest = list.find((n) => !n.read);
+            if (latest) {
+              new Notification(latest.title, {
+                body: latest.message,
+                icon: '/favicon.ico'
+              });
+            }
+          }
+        }
+        prevUnreadRef.current = count;
+
+        // Update document title with unread badge
+        if (typeof document !== 'undefined') {
+          if (!originalTitleRef.current || originalTitleRef.current.startsWith('🔔')) {
+            originalTitleRef.current = 'DMS Honda - Dealer Management System';
+          }
+          if (count > 0) {
+            document.title = `🔔 (${count}) Chat Baru - ${originalTitleRef.current}`;
+          } else {
+            document.title = originalTitleRef.current;
+          }
+        }
       }
-    } catch (e) {
+    } catch {
       // Silent error fallback
     }
   };
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // 30s poll
+    const interval = setInterval(fetchNotifications, 10000); // 10s poll for responsive alerts
     return () => clearInterval(interval);
-  }, []);
+  }, [soundEnabled]);
 
   // Close when clicking outside
   useEffect(() => {
@@ -156,6 +254,19 @@ export const NotificationDropdown: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleSound}
+                title={soundEnabled ? 'Suara Notifikasi: Aktif' : 'Suara Notifikasi: Mati'}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  soundEnabled
+                    ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                    : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              </button>
+
               {unreadCount > 0 && (
                 <button
                   type="button"
@@ -176,6 +287,20 @@ export const NotificationDropdown: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Browser Permission Banner (if not yet granted) */}
+          {!browserNotifEnabled && typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'denied' && (
+            <div className="px-3.5 py-2 bg-blue-50/80 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/40 flex items-center justify-between text-[11px]">
+              <span className="text-blue-700 dark:text-blue-300 font-medium">Aktifkan notifikasi browser</span>
+              <button
+                type="button"
+                onClick={requestBrowserPermission}
+                className="px-2 py-0.5 rounded-md bg-blue-600 text-white font-semibold text-[10px] hover:bg-blue-700 transition-colors"
+              >
+                Izinkan
+              </button>
+            </div>
+          )}
 
           {/* Notifications List */}
           <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80">

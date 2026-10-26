@@ -446,6 +446,7 @@ class WhatsAppManager {
         msg.author ||
         rawPhone;
 
+      const isNewContact = !contact;
       if (!contact) {
         try {
           contact = await prisma.contact.create({
@@ -506,6 +507,26 @@ class WhatsAppManager {
         where: { contactId: contact.id }
       });
 
+      const isNewConversation = !conversation;
+      const previousLastMessageAt = conversation?.lastMessageAt;
+      const isNewClient = isNewContact || isNewConversation;
+      let isInactiveChat = false;
+
+      if (!isNewClient && previousLastMessageAt) {
+        const inactiveMs = Date.now() - new Date(previousLastMessageAt).getTime();
+        // Chat baru jika tidak ada aktivitas chat >= 2 jam (120 menit)
+        if (inactiveMs >= 2 * 60 * 60 * 1000) {
+          isInactiveChat = true;
+        }
+      }
+
+      let messageStatus = 'DELIVERED';
+      if (isNewClient) {
+        messageStatus = 'UNREAD_NEW_CLIENT';
+      } else if (isInactiveChat) {
+        messageStatus = 'UNREAD_INACTIVE';
+      }
+
       if (!conversation) {
         try {
           conversation = await prisma.conversation.create({
@@ -531,7 +552,7 @@ class WhatsAppManager {
             senderType: 'CUSTOMER',
             content: body,
             waMessageId: msg.id.id,
-            status: 'DELIVERED'
+            status: messageStatus
           }
         });
       } catch (msgErr: any) {

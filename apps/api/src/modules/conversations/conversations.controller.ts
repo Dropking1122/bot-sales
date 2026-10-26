@@ -60,6 +60,16 @@ export async function getConversationMessages(req: Request, res: Response, next:
       throw new AppError('Percakapan tidak ditemukan', 404);
     }
 
+    // Mark unread customer messages as READ in background
+    prisma.message.updateMany({
+      where: {
+        conversationId: id,
+        senderType: 'CUSTOMER',
+        status: { not: 'READ' }
+      },
+      data: { status: 'READ' }
+    }).catch(() => {});
+
     return res.json({ success: true, data: conversation });
   } catch (err) {
     next(err);
