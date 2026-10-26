@@ -39,30 +39,15 @@ export const InboxPage: React.FC = () => {
     }
   };
 
-  const loadConversations = async (autoSelectFirst = false) => {
-    try {
-      const q = search ? `?search=${encodeURIComponent(search)}` : '';
-      const res = await apiRequest(`/conversations${q}`);
-      if (res.success && Array.isArray(res.data)) {
-        setConversations(res.data);
-        if (autoSelectFirst && !selectedConvRef.current && res.data.length > 0) {
-          selectConversation(res.data[0]);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const selectConversation = async (conv: any) => {
+    if (selectedConvRef.current?.id === conv.id && messages.length > 0) return;
+    setMessages([]);
     setSelectedConv(conv);
     selectedConvRef.current = conv;
     setLoadingMessages(true);
     try {
       const res = await apiRequest(`/conversations/${conv.id}/messages`);
-      if (res.success && res.data) {
+      if (selectedConvRef.current?.id === conv.id && res.success && res.data) {
         setMessages(res.data.messages || []);
         setSelectedConv(res.data);
         selectedConvRef.current = res.data;
@@ -71,18 +56,21 @@ export const InboxPage: React.FC = () => {
     } catch (e) {
       console.error(e);
     } finally {
-      setLoadingMessages(false);
+      if (selectedConvRef.current?.id === conv.id) {
+        setLoadingMessages(false);
+      }
     }
   };
 
   const pollActiveMessages = async () => {
     const active = selectedConvRef.current;
     if (!active || !active.id) return;
+    const activeId = active.id;
     try {
-      const res = await apiRequest(`/conversations/${active.id}/messages`);
-      if (res.success && res.data?.messages) {
+      const res = await apiRequest(`/conversations/${activeId}/messages`);
+      if (selectedConvRef.current?.id === activeId && res.success && res.data?.messages) {
+        const newMsgs = res.data.messages;
         setMessages((prev) => {
-          const newMsgs = res.data.messages;
           if (
             newMsgs.length !== prev.length ||
             (newMsgs.length > 0 && prev.length > 0 && newMsgs[newMsgs.length - 1].id !== prev[prev.length - 1].id)
@@ -95,6 +83,24 @@ export const InboxPage: React.FC = () => {
       }
     } catch (e) {
       // background silent poll
+    }
+  };
+
+  const loadConversations = async (autoSelectFirst = false) => {
+    try {
+      const q = search ? `?search=${encodeURIComponent(search)}` : '';
+      const res = await apiRequest(`/conversations${q}`);
+      if (res.success && Array.isArray(res.data)) {
+        setConversations(res.data);
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+        if (!isMobile && autoSelectFirst && !selectedConvRef.current && res.data.length > 0) {
+          selectConversation(res.data[0]);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -281,7 +287,7 @@ export const InboxPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleToggleBot}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${
                     selectedConv.isBotActive
                       ? 'bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                       : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
@@ -290,12 +296,14 @@ export const InboxPage: React.FC = () => {
                   {selectedConv.isBotActive ? (
                     <>
                       <UserCheck className="w-3.5 h-3.5" />
-                      <span>Ambil Alih (Matikan Bot)</span>
+                      <span className="hidden sm:inline">Ambil Alih (Matikan Bot)</span>
+                      <span className="sm:hidden">Takeover</span>
                     </>
                   ) : (
                     <>
                       <Bot className="w-3.5 h-3.5" />
-                      <span>Aktifkan Bot Kembali</span>
+                      <span className="hidden sm:inline">Aktifkan Bot Kembali</span>
+                      <span className="sm:hidden">Bot ON</span>
                     </>
                   )}
                 </button>

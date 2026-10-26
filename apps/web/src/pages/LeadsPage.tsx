@@ -127,9 +127,10 @@ export const LeadsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Leads Table */}
+      {/* Leads Table & Mobile Cards */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[700px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
@@ -199,6 +200,69 @@ export const LeadsPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards View */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {loading ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Memuat data leads...</div>
+          ) : leads.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Belum ada data leads yang sesuai.</div>
+          ) : (
+            leads.map((l) => (
+              <div key={l.id} className="p-4 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="font-semibold text-sm text-slate-900 dark:text-white leading-tight">{l.customerName}</h4>
+                    <p className="font-mono text-[10px] text-slate-400">{l.phone}</p>
+                  </div>
+                  <select
+                    disabled={updatingId === l.id}
+                    value={l.status}
+                    onChange={(e) => handleStatusChange(l.id, e.target.value)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 shrink-0 ${getStatusBadge(
+                      l.status
+                    )}`}
+                  >
+                    {LEAD_STATUSES.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Motor Diminati:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{l.motorcycle?.name || 'Belum dipilih'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Rencana DP:</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300">{formatIDR(l.dpPlanned ? Number(l.dpPlanned) : null)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Tenor:</span>
+                    <span className="text-slate-600 dark:text-slate-400">{l.tenorPlanned ? `${l.tenorPlanned} bln` : '-'}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
+                    <span className="text-slate-400 text-[11px]">Sales PIC:</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300">{l.assignedSales?.name || 'Belum ditugaskan'}</span>
+                  </div>
+                </div>
+
+                {l.notes && (
+                  <p className="text-[11px] text-slate-500 italic bg-amber-50/50 dark:bg-amber-950/20 px-2 py-1 rounded-lg">
+                    "{l.notes}"
+                  </p>
+                )}
+
+                <div className="text-right text-[10px] text-slate-400">
+                  Masuk: {new Date(l.createdAt).toLocaleDateString('id-ID')}
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Pagination Controls */}

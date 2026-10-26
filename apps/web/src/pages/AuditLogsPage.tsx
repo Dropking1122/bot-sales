@@ -38,14 +38,15 @@ export const AuditLogsPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Logs Table */}
+      {/* Logs Table & Mobile Cards */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[700px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
                 <th className="py-3 px-4 whitespace-nowrap">Waktu</th>
-                <th className="py-3 px-4 whitespace-nowrap">Pengguna / Aktor</th>
+                <th className="py-3 px-4 whitespace-nowrap">Pengguna / Sales</th>
                 <th className="py-3 px-4 whitespace-nowrap">Aksi</th>
                 <th className="py-3 px-4 whitespace-nowrap">Entitas</th>
                 <th className="py-3 px-4 whitespace-nowrap">Detail Perubahan</th>
@@ -94,6 +95,48 @@ export const AuditLogsPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards View */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {loading ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Memuat audit log...</div>
+          ) : logs.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Belum ada catatan aktivitas.</div>
+          ) : (
+            logs.map((log) => (
+              <div key={log.id} className="p-4 space-y-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-semibold text-slate-900 dark:text-white block">
+                      {log.admin?.name || 'Sistem Otomatis'}
+                    </span>
+                    {log.admin?.role && (
+                      <span className="text-[10px] text-slate-400">{log.admin.role}</span>
+                    )}
+                  </div>
+                  <span className="px-2 py-0.5 rounded font-mono text-[10px] font-semibold bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                    {log.action}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Entitas: <strong className="text-slate-700 dark:text-slate-300">{log.entity}</strong></span>
+                  <span className="font-mono text-[10px] text-slate-400">{log.ipAddress || '-'}</span>
+                </div>
+
+                {log.details && (
+                  <p className="text-[11px] font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg break-all">
+                    {JSON.stringify(log.details)}
+                  </p>
+                )}
+
+                <div className="text-right text-[10px] font-mono text-slate-400">
+                  {new Date(log.createdAt).toLocaleString('id-ID')}
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Pagination Controls */}

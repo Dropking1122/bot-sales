@@ -176,9 +176,10 @@ export const ContactsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table & Mobile Cards */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[800px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
@@ -273,6 +274,74 @@ export const ContactsPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards View */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {loading ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Memuat data kontak...</div>
+          ) : contacts.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Belum ada data kontak.</div>
+          ) : (
+            contacts.map((c) => (
+              <div key={c.id} className="p-4 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.id)}
+                      onChange={() => toggleSelect(c.id)}
+                      className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                    />
+                    <div>
+                      <h4 className="font-semibold text-sm text-slate-900 dark:text-white leading-tight">{c.name}</h4>
+                      {c.email && <p className="text-[10px] text-slate-400">{c.email}</p>}
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                    c.isOptOut
+                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                      : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                  }`}>
+                    {c.isOptOut ? 'Opt-Out' : 'Aktif'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">{c.phoneNormalized}</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    c.consentStatus === 'GRANTED'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                  }`}>
+                    {c.consentStatus === 'GRANTED' ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+                    <span>{c.consentStatus}</span>
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                  <div>
+                    <span className="text-slate-400">Minat: </span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300">{c.interestedMotorcycle || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Sumber: </span>
+                    <span>{c.source}</span>
+                  </div>
+                </div>
+
+                {c.tags && c.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {c.tags.map((t: any) => (
+                      <span key={t.id} className="px-2 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {t.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
 
         {/* Pagination Controls */}

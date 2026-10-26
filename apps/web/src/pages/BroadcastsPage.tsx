@@ -173,9 +173,10 @@ export const BroadcastsPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Campaigns Table */}
+      {/* Campaigns Table & Mobile Cards */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[800px]">
             <thead className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
@@ -289,6 +290,96 @@ export const BroadcastsPage: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards View */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {loading ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Memuat daftar kampanye...</div>
+          ) : campaigns.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">Belum ada kampanye broadcast yang dibuat.</div>
+          ) : (
+            campaigns.map((c) => {
+              const percent = c.totalTarget > 0 ? Math.round(((c.sentCount + c.failedCount) / c.totalTarget) * 100) : 0;
+              return (
+                <div key={c.id} className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-semibold text-sm text-slate-900 dark:text-white leading-tight">{c.name}</h4>
+                      {c.description && <p className="text-[11px] text-slate-400 mt-0.5">{c.description}</p>}
+                      <span className="inline-block mt-1 text-[10px] text-slate-500 font-medium">{c.campaignType}</span>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${getStatusBadge(c.status)}`}>
+                      {c.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Target: <strong className="text-slate-800 dark:text-slate-200">{c.totalTarget}</strong></span>
+                      <span className="text-emerald-600 font-semibold">{c.sentCount} terkirim</span>
+                      <span className="text-rose-600 font-semibold">{c.failedCount} gagal</span>
+                    </div>
+                    <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${percent}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>Progres: {percent}%</span>
+                      <span>Dibuat: {new Date(c.createdAt).toLocaleDateString('id-ID')}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    {c.status === 'DRAFT' || c.status === 'PAUSED' ? (
+                      <button
+                        onClick={() => handleAction(c.id, 'start')}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Mulai</span>
+                      </button>
+                    ) : c.status === 'RUNNING' ? (
+                      <button
+                        onClick={() => handleAction(c.id, 'pause')}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold"
+                      >
+                        <Pause className="w-3.5 h-3.5" />
+                        <span>Jeda</span>
+                      </button>
+                    ) : null}
+
+                    {c.status === 'RUNNING' || c.status === 'PAUSED' ? (
+                      <button
+                        onClick={() => handleAction(c.id, 'cancel')}
+                        className="p-1.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                        title="Batal"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    ) : null}
+
+                    {c.failedCount > 0 && (c.status === 'COMPLETED' || c.status === 'FAILED' || c.status === 'PAUSED') ? (
+                      <button
+                        onClick={() => handleAction(c.id, 'retry')}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-100 text-orange-700 text-xs font-semibold"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Retry Gagal</span>
+                      </button>
+                    ) : null}
+
+                    <button
+                      onClick={() => handleDownloadReport(c.id, c.name)}
+                      className="p-2 rounded-lg text-slate-500 hover:text-blue-600 bg-slate-100 dark:bg-slate-800"
+                      title="Unduh Excel"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
         {/* Pagination Controls */}
