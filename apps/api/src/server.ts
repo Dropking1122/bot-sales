@@ -32,6 +32,16 @@ import { startBroadcastWorker } from './jobs/broadcastWorker';
 
 const app = express();
 
+// Settings values are admin-editable and rendered into index.html — escape them.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Security and middleware
 app.set('trust proxy', 1);
 
@@ -50,10 +60,15 @@ app.use(
   })
 );
 
-// Enable CORS for all incoming origins with full preflight & credentials support
+// CORS: SPA is served by this same server, so only the dealer domain(s) need access.
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'https://m.revd.dev,http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin']
@@ -67,8 +82,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Web Application Firewall / Cyber Attack detection
 app.use(securityGuard);
 
-// Static files ONLY for uploaded images & media (protects whatsapp-session and exports from public access)
-app.use('/storage/uploads', express.static(config.storage.uploadsDir));
+// Static files: motorcycle photos only. `uploads/imports` holds customer spreadsheets (PII)
+// and must never be web-reachable — it stays behind the authenticated import endpoints.
+app.use(
+  '/storage/uploads/motorcycles',
+  express.static(path.join(config.storage.uploadsDir, 'motorcycles'))
+);
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -113,12 +132,12 @@ if (fs.existsSync(webDistPath)) {
       const descSetting = await prisma.botSetting.findUnique({ where: { key: 'web_meta_description' } });
 
       if (titleSetting?.value) {
-        html = html.replace(/<title>.*?<\/title>/, `<title>${titleSetting.value}</title>`);
+        html = html.replace(/<title>.*?<\/title>/, `<title>${escapeHtml(titleSetting.value)}</title>`);
       }
       if (descSetting?.value) {
         html = html.replace(
           /<meta name="description".*?>/,
-          `<meta name="description" content="${descSetting.value}">`
+          `<meta name="description" content="${escapeHtml(descSetting.value)}">`
         );
       }
 

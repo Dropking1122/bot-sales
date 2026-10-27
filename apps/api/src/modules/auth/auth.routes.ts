@@ -6,6 +6,7 @@ import {
   me,
   changePassword,
   listAdmins,
+  listTeam,
   createAdmin,
   updateAdmin
 } from './auth.controller';
@@ -33,6 +34,9 @@ router.post('/logout', (_req, res) => res.json({ success: true, message: 'Logout
 // Protected
 router.get('/me', authenticate, me);
 router.post('/change-password', authenticate, changePassword);
+
+// Any authenticated staff: pick a colleague to hand a conversation to
+router.get('/team', authenticate, listTeam);
 
 // Super Admin Only
 router.get('/admins', authenticate, requireRoles(AdminRole.SUPER_ADMIN), listAdmins);

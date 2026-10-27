@@ -199,6 +199,19 @@ export async function listAdmins(req: Request, res: Response, next: NextFunction
   }
 }
 
+export async function listTeam(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const team = await prisma.admin.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, role: true, phone: true, isAvailable: true },
+      orderBy: { name: 'asc' }
+    });
+    return res.json({ success: true, data: team });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function createAdmin(req: Request, res: Response, next: NextFunction) {
   try {
     const data = AdminUserSchema.parse(req.body);

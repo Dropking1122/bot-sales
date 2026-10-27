@@ -134,7 +134,7 @@ export const SettingsPage: React.FC = () => {
     try {
       if (editingAdmin) {
         await apiRequest(`/auth/admins/${editingAdmin.id}`, {
-          method: 'PUT',
+          method: 'PATCH',
           body: JSON.stringify(adminForm)
         });
       } else {
@@ -1249,7 +1249,7 @@ export const SettingsPage: React.FC = () => {
                             onClick={async () => {
                               try {
                                 await apiRequest(`/auth/admins/${adm.id}`, {
-                                  method: 'PUT',
+                                  method: 'PATCH',
                                   body: JSON.stringify({ isAvailable: !adm.isAvailable })
                                 });
                                 loadAdmins();

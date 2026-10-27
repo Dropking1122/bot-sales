@@ -45,7 +45,7 @@ export const InboxPage: React.FC = () => {
 
   useEffect(() => {
     // Load available sales for delegation
-    apiRequest('/auth/admins').then((res) => {
+    apiRequest('/auth/team').then((res) => {
       if (res.success && Array.isArray(res.data)) {
         setSalesList(res.data);
       }

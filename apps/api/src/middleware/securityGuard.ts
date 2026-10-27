@@ -11,7 +11,7 @@ const SQL_INJECTION_REGEX = /\b(union(?:\s+all)?\s+select|waitfor\s+delay|sleep\
 
 const COMMAND_INJECTION_REGEX = /\$\{jndi:(?:ldap|rmi|dns|nis):|;\s*(?:cat\s+\/|wget\s+https?:\/\/|curl\s+https?:\/\/|nc\s+-[el]|powershell\b|bash\s+-i)/i;
 
-const XSS_REGEX = /<script[\s\S]*?>[\s\S]*?<\/script>|javascript:\s*[a-z0-9_]|<[^>]+(?:onload|onerror|onclick|onmouseover|eval)\s*=/i;
+const XSS_REGEX = /<script[\s\S]*?>[\s\S]*?<\/script\s*>|javascript:\s*[a-z0-9_]|<[^>]+(?:onload|onerror|onclick|onmouseover|eval)\s*=/i;
 
 // Fields permitted to contain rich text (exempted from strict injection checks)
 const EXEMPT_FIELDS = new Set(['ai_system_prompt', 'bot_greeting', 'bot_dealer_address', 'notes', 'internalNotes']);

@@ -33,12 +33,22 @@ export async function getPublicSettings(_req: Request, res: Response, next: Next
   }
 }
 
-export async function getSettings(_req: Request, res: Response, next: NextFunction) {
+// Never ship provider credentials back to the browser, even to admins.
+const SECRET_SETTING_KEYS = new Set(['ai_api_key']);
+
+export async function getSettings(req: Request, res: Response, next: NextFunction) {
   try {
     const settings = await prisma.botSetting.findMany({
       orderBy: { key: 'asc' }
     });
-    return res.json({ success: true, data: settings });
+
+    const data = settings.map((s) =>
+      SECRET_SETTING_KEYS.has(s.key)
+        ? { ...s, value: '', isSecret: true, hasValue: Boolean(s.value) }
+        : s
+    );
+
+    return res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -95,6 +105,8 @@ export async function updateSettings(req: Request, res: Response, next: NextFunc
     }
 
     for (const s of settingList) {
+      // A blanked secret means "unchanged", not "erase the credential".
+      if (SECRET_SETTING_KEYS.has(s.key) && !String(s.value ?? '').trim()) continue;
       await prisma.botSetting.upsert({
         where: { key: s.key },
         update: { value: String(s.value ?? '') },
