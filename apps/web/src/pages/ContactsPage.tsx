@@ -229,7 +229,13 @@ export const ContactsPage: React.FC = () => {
                       {c.email && <p className="text-[10px] text-slate-400 font-normal">{c.email}</p>}
                     </td>
                     <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
-                      {c.phoneNormalized}
+                      {(c.phoneNormalized.startsWith('1') || c.phoneNormalized.startsWith('2') || c.phoneNormalized.startsWith('4')) && c.phoneNormalized.length >= 14 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-sans" title={`WhatsApp Privacy LID: ${c.phoneNormalized}`}>
+                          <span>🔒 WA Privacy ID</span>
+                        </span>
+                      ) : (
+                        c.phoneNormalized
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-wrap gap-1">
@@ -308,7 +314,13 @@ export const ContactsPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between text-xs py-1.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                  <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">{c.phoneNormalized}</span>
+                  {(c.phoneNormalized.startsWith('1') || c.phoneNormalized.startsWith('2') || c.phoneNormalized.startsWith('4')) && c.phoneNormalized.length >= 14 ? (
+                    <span className="text-amber-600 dark:text-amber-400 font-sans font-medium text-[11px]">
+                      🔒 WA Privacy ID
+                    </span>
+                  ) : (
+                    <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">{c.phoneNormalized}</span>
+                  )}
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                     c.consentStatus === 'GRANTED'
                       ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'

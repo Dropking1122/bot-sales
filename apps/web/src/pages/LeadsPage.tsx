@@ -161,7 +161,13 @@ export const LeadsPage: React.FC = () => {
                   <tr key={l.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="py-3.5 px-4">
                       <p className="font-semibold text-slate-900 dark:text-white">{l.customerName}</p>
-                      <p className="font-mono text-[10px] text-slate-500">{l.phone}</p>
+                      <p className="font-mono text-[10px] text-slate-500">
+                        {l.phone && (l.phone.startsWith('1') || l.phone.startsWith('2') || l.phone.startsWith('4')) && l.phone.length >= 14 ? (
+                          <span className="text-amber-600 dark:text-amber-400 font-sans">🔒 WA Privacy ID</span>
+                        ) : (
+                          l.phone
+                        )}
+                      </p>
                     </td>
                     <td className="py-3.5 px-4 font-medium text-slate-800 dark:text-slate-200">
                       {l.motorcycle?.name || 'Belum dipilih'}
@@ -214,7 +220,13 @@ export const LeadsPage: React.FC = () => {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h4 className="font-semibold text-sm text-slate-900 dark:text-white leading-tight">{l.customerName}</h4>
-                    <p className="font-mono text-[10px] text-slate-400">{l.phone}</p>
+                    <p className="font-mono text-[10px] text-slate-400">
+                      {l.phone && (l.phone.startsWith('1') || l.phone.startsWith('2') || l.phone.startsWith('4')) && l.phone.length >= 14 ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-sans">🔒 WA Privacy ID</span>
+                      ) : (
+                        l.phone
+                      )}
+                    </p>
                   </div>
                   <select
                     disabled={updatingId === l.id}

@@ -60,8 +60,72 @@ function inspectObject(obj: any, parentKey?: string): { isMalicious: boolean; ty
   return { isMalicious: false };
 }
 
+// In-memory rate limiting and auto-jail for repeat malicious IPs
+interface IpRecord {
+  violations: number;
+  lastViolation: number;
+  bannedUntil?: number;
+}
+const ipJailMap = new Map<string, IpRecord>();
+
+// Clean up jail map every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rec] of ipJailMap.entries()) {
+    if (rec.bannedUntil && rec.bannedUntil < now) {
+      ipJailMap.delete(ip);
+    } else if (!rec.bannedUntil && now - rec.lastViolation > 60 * 60 * 1000) {
+      ipJailMap.delete(ip);
+    }
+  }
+}, 30 * 60 * 1000);
+
+function registerViolation(ip: string): boolean {
+  const now = Date.now();
+  let rec = ipJailMap.get(ip);
+  if (!rec) {
+    rec = { violations: 1, lastViolation: now };
+    ipJailMap.set(ip, rec);
+    return false;
+  }
+
+  // If already banned
+  if (rec.bannedUntil && rec.bannedUntil > now) {
+    return true;
+  }
+
+  // Count violations within 10-minute window
+  if (now - rec.lastViolation < 10 * 60 * 1000) {
+    rec.violations += 1;
+  } else {
+    rec.violations = 1;
+  }
+  rec.lastViolation = now;
+
+  // If >= 4 violations, jail for 24 hours
+  if (rec.violations >= 4) {
+    rec.bannedUntil = now + 24 * 60 * 60 * 1000;
+    logger.warn({ ip, violations: rec.violations }, 'IP has been automatically BANNED for 24h by SecurityGuard Jail');
+    return true;
+  }
+
+  return false;
+}
+
 export function securityGuard(req: Request, res: Response, next: NextFunction) {
   try {
+    const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip || '';
+    const now = Date.now();
+
+    // Check if IP is currently in jail
+    const jailRec = ipJailMap.get(rawIp);
+    if (jailRec && jailRec.bannedUntil && jailRec.bannedUntil > now) {
+      return res.status(403).json({
+        success: false,
+        message: 'Akses diblokir permanen sementara: Alamat IP Anda masuk daftar pencekalan keamanan karena aktivitas mencurigakan berulang.'
+      });
+    }
+
     const rawUrl = req.originalUrl || req.url || '';
     let decodedUrl = rawUrl;
     try {
@@ -72,14 +136,14 @@ export function securityGuard(req: Request, res: Response, next: NextFunction) {
 
     // 1. Check for probe scanner paths
     if (PROBE_SCANNER_REGEX.test(decodedUrl)) {
-      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip;
-      logger.warn({ ip, url: rawUrl }, 'Blocked scanner / probe request');
+      const isBanned = registerViolation(rawIp);
+      logger.warn({ ip: rawIp, url: rawUrl }, 'Blocked probe scanner path');
 
-      logAudit(req, 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
+      logAudit(req, isBanned ? 'IP_BANNED' : 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
         attackType: 'PROBE_SCANNER',
         path: rawUrl,
         method: req.method,
-        severity: 'MEDIUM',
+        severity: isBanned ? 'CRITICAL' : 'MEDIUM',
         userAgent: req.headers['user-agent'] || '-'
       }).catch(() => {});
 
@@ -92,14 +156,14 @@ export function securityGuard(req: Request, res: Response, next: NextFunction) {
     // 2. Check URL for Path Traversal or Injection
     const urlCheck = inspectString(decodedUrl);
     if (urlCheck.isMalicious) {
-      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip;
-      logger.warn({ ip, url: rawUrl, type: urlCheck.type }, 'Blocked malicious URL attack');
+      const isBanned = registerViolation(rawIp);
+      logger.warn({ ip: rawIp, url: rawUrl, type: urlCheck.type }, 'Blocked malicious URL attack');
 
-      logAudit(req, 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
+      logAudit(req, isBanned ? 'IP_BANNED' : 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
         attackType: urlCheck.type,
         path: rawUrl,
         method: req.method,
-        severity: 'HIGH',
+        severity: isBanned ? 'CRITICAL' : 'HIGH',
         sample: urlCheck.sample,
         userAgent: req.headers['user-agent'] || '-'
       }).catch(() => {});
@@ -114,14 +178,14 @@ export function securityGuard(req: Request, res: Response, next: NextFunction) {
     if (req.query && typeof req.query === 'object') {
       const queryCheck = inspectObject(req.query);
       if (queryCheck.isMalicious) {
-        const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip;
-        logger.warn({ ip, path: rawUrl, type: queryCheck.type }, 'Blocked malicious query parameter');
+        const isBanned = registerViolation(rawIp);
+        logger.warn({ ip: rawIp, path: rawUrl, type: queryCheck.type }, 'Blocked malicious query parameter');
 
-        logAudit(req, 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
+        logAudit(req, isBanned ? 'IP_BANNED' : 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
           attackType: queryCheck.type,
           path: rawUrl,
           method: req.method,
-          severity: 'HIGH',
+          severity: isBanned ? 'CRITICAL' : 'HIGH',
           sample: queryCheck.sample,
           userAgent: req.headers['user-agent'] || '-'
         }).catch(() => {});
@@ -137,14 +201,14 @@ export function securityGuard(req: Request, res: Response, next: NextFunction) {
     if (req.body && typeof req.body === 'object') {
       const bodyCheck = inspectObject(req.body);
       if (bodyCheck.isMalicious) {
-        const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip;
-        logger.warn({ ip, path: rawUrl, type: bodyCheck.type }, 'Blocked malicious payload in body');
+        const isBanned = registerViolation(rawIp);
+        logger.warn({ ip: rawIp, path: rawUrl, type: bodyCheck.type }, 'Blocked malicious payload in body');
 
-        logAudit(req, 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
+        logAudit(req, isBanned ? 'IP_BANNED' : 'ATTACK_BLOCKED', 'SECURITY_ALERT', null, {
           attackType: bodyCheck.type,
           path: rawUrl,
           method: req.method,
-          severity: 'HIGH',
+          severity: isBanned ? 'CRITICAL' : 'HIGH',
           sample: bodyCheck.sample,
           userAgent: req.headers['user-agent'] || '-'
         }).catch(() => {});

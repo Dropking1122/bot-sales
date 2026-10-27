@@ -427,13 +427,14 @@ class WhatsAppManager {
     }
 
     try {
-      // 1. Get or create Contact
+      // 1. Get or create Contact (Match by normalizedPhone, rawPhone, targetJid, or LID notes)
       let contact = await prisma.contact.findFirst({
         where: {
           OR: [
             { phoneNormalized: normalizedPhone },
             { phone: rawPhone },
-            { phone: targetJid }
+            { phone: targetJid },
+            ...(targetJid.endsWith('@lid') ? [{ internalNotes: { contains: targetJid } }] : [])
           ]
         }
       });
@@ -566,11 +567,13 @@ class WhatsAppManager {
         data: { lastMessageAt: new Date() }
       });
 
-      // 2b. Automatically ensure Lead exists for this contact
+      // 2b. Automatically ensure strictly 1 active/recent Lead per contact
       let activeLead = await prisma.lead.findFirst({
         where: {
-          contactId: contact.id,
-          status: { in: ['BARU', 'DIHUBUNGI'] }
+          OR: [
+            { contactId: contact.id },
+            { phone: contact.phoneNormalized || contact.phone }
+          ]
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -589,6 +592,24 @@ class WhatsAppManager {
           logger.info({ leadId: activeLead.id, customer: contact.name, phone: contact.phoneNormalized }, 'Lead automatically created for inbound chat');
         } catch (leadErr: any) {
           logger.debug({ leadErr }, 'Lead concurrent creation handled');
+        }
+      } else {
+        // Lead exists: keep it up-to-date without inflating total leads count
+        const updateData: any = {};
+        if (contact.name && contact.name !== activeLead.customerName) {
+          updateData.customerName = contact.name;
+        }
+        if (contact.phoneNormalized && activeLead.phone !== contact.phoneNormalized) {
+          updateData.phone = contact.phoneNormalized;
+        }
+        if (activeLead.contactId !== contact.id) {
+          updateData.contactId = contact.id;
+        }
+        if (Object.keys(updateData).length > 0) {
+          await prisma.lead.update({
+            where: { id: activeLead.id },
+            data: updateData
+          });
         }
       }
 
@@ -788,10 +809,12 @@ class WhatsAppManager {
       });
 
       // Update or create lead
-      const existingLead = await prisma.lead.findFirst({
+      let existingLead = await prisma.lead.findFirst({
         where: {
-          contactId: contact.id,
-          status: { in: ['BARU', 'DIHUBUNGI'] }
+          OR: [
+            { contactId: contact.id },
+            { phone: contact.phoneNormalized || contact.phone }
+          ]
         },
         orderBy: { createdAt: 'desc' }
       });
