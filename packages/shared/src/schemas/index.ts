@@ -8,9 +8,11 @@ export const LoginSchema = z.object({
 export const AdminUserSchema = z.object({
   name: z.string().min(2, 'Nama minimal 2 karakter'),
   email: z.string().email('Format email tidak valid'),
+  phone: z.string().optional().nullable(),
   password: z.string().min(6, 'Password minimal 6 karakter').optional(),
   role: z.enum(['SUPER_ADMIN', 'ADMIN', 'SALES']),
-  isActive: z.boolean().default(true)
+  isActive: z.boolean().default(true),
+  isAvailable: z.boolean().default(true)
 });
 
 export const BrandSchema = z.object({

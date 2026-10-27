@@ -3,6 +3,7 @@ import { prisma } from '../../config/db';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
 import { sendWhatsAppTextMessage } from '../whatsapp/whatsapp.service';
+import { logger } from '../../config/logger';
 
 export async function listConversations(req: Request, res: Response, next: NextFunction) {
   try {
@@ -181,6 +182,85 @@ export async function resumeBot(req: Request, res: Response, next: NextFunction)
     await logAudit(req, 'RESUME_BOT', 'Conversation', id);
 
     return res.json({ success: true, message: 'Bot diaktifkan kembali untuk percakapan ini', data: conv });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function transferConversation(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const { targetAdminId, reason } = req.body;
+
+    if (!targetAdminId) {
+      throw new AppError('Admin / Sales tujuan wajib dipilih', 400);
+    }
+
+    const targetAdmin = await prisma.admin.findUnique({
+      where: { id: targetAdminId }
+    });
+
+    if (!targetAdmin || !targetAdmin.isActive) {
+      throw new AppError('Sales tujuan tidak ditemukan atau tidak aktif', 404);
+    }
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id },
+      include: { contact: true }
+    });
+
+    if (!conv) {
+      throw new AppError('Percakapan tidak ditemukan', 404);
+    }
+
+    // Update conversation assigned admin
+    const updatedConv = await prisma.conversation.update({
+      where: { id },
+      data: {
+        assignedToAdminId: targetAdmin.id,
+        isBotActive: false,
+        status: 'HANDOFF'
+      },
+      include: {
+        contact: true,
+        assignedAdmin: { select: { id: true, name: true, phone: true } }
+      }
+    });
+
+    // Update active lead assigned sales as well
+    await prisma.lead.updateMany({
+      where: { contactId: conv.contactId },
+      data: { assignedSalesId: targetAdmin.id }
+    });
+
+    // If target admin has WhatsApp phone registered, send internal notification to their WhatsApp
+    if (targetAdmin.phone && targetAdmin.phone.trim().length >= 8) {
+      const clientName = conv.contact.name || conv.contact.phoneNormalized;
+      const cleanPhone = targetAdmin.phone.replace(/[^0-9]/g, '');
+      const transferMsg =
+        `📢 *PENGALIHAN OBROLAN PELANGGAN*\n\n` +
+        `Pelanggan: *${clientName}* (${conv.contact.phoneNormalized || '-'})\n` +
+        `Dialihkan oleh: *${req.user?.name || 'Sales'}*\n` +
+        (reason ? `Catatan: _"${reason}"_\n` : '') +
+        `\nMohon segera ditindaklanjuti melalui DMS Admin: https://m.revd.dev/inbox`;
+
+      sendWhatsAppTextMessage(`${cleanPhone}@c.us`, transferMsg).catch((err: any) => {
+        logger.warn({ err: err?.message, targetPhone: targetAdmin.phone }, 'Failed to notify target admin via WA');
+      });
+    }
+
+    await logAudit(req, 'TRANSFER_CONVERSATION', 'Conversation', id, {
+      fromAdminId: req.user?.id,
+      toAdminId: targetAdmin.id,
+      targetName: targetAdmin.name,
+      reason
+    });
+
+    return res.json({
+      success: true,
+      message: `Percakapan berhasil dialihkan ke ${targetAdmin.name}`,
+      data: updatedConv
+    });
   } catch (err) {
     next(err);
   }

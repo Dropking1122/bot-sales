@@ -11,7 +11,10 @@ import {
   Loader2,
   RefreshCw,
   Trash2,
-  ArrowLeft
+  ArrowLeft,
+  UserPlus,
+  Users,
+  CornerUpRight
 } from 'lucide-react';
 
 export const InboxPage: React.FC = () => {
@@ -24,6 +27,13 @@ export const InboxPage: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState('');
 
+  // Transfer State
+  const [salesList, setSalesList] = useState<any[]>([]);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedSalesId, setSelectedSalesId] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferring, setTransferring] = useState(false);
+
   const selectedConvRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -32,6 +42,15 @@ export const InboxPage: React.FC = () => {
   useEffect(() => {
     selectedConvRef.current = selectedConv;
   }, [selectedConv]);
+
+  useEffect(() => {
+    // Load available sales for delegation
+    apiRequest('/auth/admins').then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setSalesList(res.data);
+      }
+    }).catch((e) => console.error(e));
+  }, []);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesEndRef.current) {
@@ -163,6 +182,37 @@ export const InboxPage: React.FC = () => {
       }
     } catch (err: any) {
       alert(err.message || 'Gagal mengubah status bot');
+    }
+  };
+
+  const handleTransferSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedConv || !selectedSalesId) return;
+    setTransferring(true);
+    try {
+      const res = await apiRequest(`/conversations/${selectedConv.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          targetAdminId: selectedSalesId,
+          reason: transferReason
+        })
+      });
+
+      if (res.success) {
+        alert(res.message || 'Percakapan berhasil dialihkan!');
+        setShowTransferModal(false);
+        setTransferReason('');
+        setSelectedSalesId('');
+        if (res.data) {
+          setSelectedConv(res.data);
+          selectedConvRef.current = res.data;
+        }
+        loadConversations(false);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Gagal mengalihkan percakapan');
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -299,6 +349,17 @@ export const InboxPage: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={() => setShowTransferModal(true)}
+                  title="Alihkan / Transfer ke Sales Lain"
+                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-colors bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800"
+                >
+                  <CornerUpRight className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="hidden sm:inline">Alihkan Sales</span>
+                  <span className="sm:hidden">Alihkan</span>
+                </button>
+
+                <button
                   onClick={handleToggleBot}
                   className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${
                     selectedConv.isBotActive
@@ -416,6 +477,75 @@ export const InboxPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Transfer Conversation Modal */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xl">
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+              <CornerUpRight className="w-4 h-4 text-indigo-500" />
+              Alihkan Percakapan ke Rekan Sales
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Pelanggan: <strong className="text-slate-800 dark:text-slate-200">{selectedConv?.contact?.name || selectedConv?.contact?.phoneNormalized}</strong>.
+              Notifikasi instan akan dikirimkan ke WhatsApp sales yang Anda pilih.
+            </p>
+
+            <form onSubmit={handleTransferSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Pilih Sales / Admin Tujuan
+                </label>
+                <select
+                  required
+                  value={selectedSalesId}
+                  onChange={(e) => setSelectedSalesId(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="">-- Pilih Rekan Sales --</option>
+                  {salesList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.role}) {s.isAvailable ? '🟢 Available' : '🔴 Sibuk'} {s.phone ? `• WA: ${s.phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Catatan / Alasan Pengalihan (Opsional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  placeholder="Contoh: Sedang serah terima unit di showroom, tolong bantu followup perhitungan kredit PCX nya."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  disabled={transferring}
+                  onClick={() => setShowTransferModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={!selectedSalesId || transferring}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
+                >
+                  {transferring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CornerUpRight className="w-3.5 h-3.5" />}
+                  <span>{transferring ? 'Mengalihkan...' : 'Alihkan Sekarang'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

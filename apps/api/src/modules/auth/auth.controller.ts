@@ -183,8 +183,10 @@ export async function listAdmins(req: Request, res: Response, next: NextFunction
         id: true,
         name: true,
         email: true,
+        phone: true,
         role: true,
         isActive: true,
+        isAvailable: true,
         createdAt: true,
         updatedAt: true
       },
@@ -214,16 +216,20 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
       data: {
         name: data.name,
         email: data.email,
+        phone: data.phone || null,
         passwordHash,
         role: data.role,
-        isActive: data.isActive
+        isActive: data.isActive,
+        isAvailable: data.isAvailable
       },
       select: {
         id: true,
         name: true,
         email: true,
+        phone: true,
         role: true,
         isActive: true,
+        isAvailable: true,
         createdAt: true
       }
     });
@@ -239,7 +245,7 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
 export async function updateAdmin(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const { name, role, isActive, password } = req.body;
+    const { name, email, phone, role, isActive, isAvailable, password } = req.body;
 
     const existing = await prisma.admin.findUnique({ where: { id } });
     if (!existing) {
@@ -248,9 +254,13 @@ export async function updateAdmin(req: Request, res: Response, next: NextFunctio
 
     const updateData: any = {};
     if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (phone !== undefined) updateData.phone = phone ? String(phone).trim() : null;
     if (role) updateData.role = role;
-    if (typeof isActive === 'boolean') updateData.isActive = isActive;
-    if (password && password.length >= 6) {
+    if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+    if (isAvailable !== undefined) updateData.isAvailable = Boolean(isAvailable);
+
+    if (password && String(password).trim().length >= 6) {
       updateData.passwordHash = await bcrypt.hash(password, 10);
     }
 
@@ -261,13 +271,15 @@ export async function updateAdmin(req: Request, res: Response, next: NextFunctio
         id: true,
         name: true,
         email: true,
+        phone: true,
         role: true,
         isActive: true,
+        isAvailable: true,
         updatedAt: true
       }
     });
 
-    await logAudit(req, 'UPDATE_ADMIN', 'Admin', id, updateData);
+    await logAudit(req, 'UPDATE_ADMIN', 'Admin', id, { name: updated.name, role: updated.role, isAvailable: updated.isAvailable });
 
     return res.json({ success: true, data: updated });
   } catch (err) {

@@ -23,12 +23,30 @@ import {
   Cpu,
   Eye,
   EyeOff,
+  Users,
+  UserPlus,
+  Phone,
+  Shield,
+  Edit2,
   Play
 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
   const { settings: globalSettings, refreshSettings, updateSettingsState } = useSettings();
-  const [activeTab, setActiveTab] = useState<'web' | 'whatsapp' | 'bot' | 'ai'>('web');
+  const [activeTab, setActiveTab] = useState<'web' | 'whatsapp' | 'bot' | 'ai' | 'admins'>('web');
+  const [adminsList, setAdminsList] = useState<any[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [editingAdmin, setEditingAdmin] = useState<any | null>(null);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminForm, setAdminForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    role: 'SALES',
+    isActive: true,
+    isAvailable: true
+  });
 
   // WhatsApp State
   const [waStatus, setWaStatus] = useState<any | null>(null);
@@ -97,9 +115,55 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const loadAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const res = await apiRequest('/auth/admins');
+      if (res.success && Array.isArray(res.data)) {
+        setAdminsList(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  const handleSaveAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingAdmin) {
+        await apiRequest(`/auth/admins/${editingAdmin.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(adminForm)
+        });
+      } else {
+        await apiRequest('/auth/admins', {
+          method: 'POST',
+          body: JSON.stringify(adminForm)
+        });
+      }
+      setShowAdminModal(false);
+      setEditingAdmin(null);
+      setAdminForm({
+        name: '',
+        email: '',
+        phone: '',
+        password: '',
+        role: 'SALES',
+        isActive: true,
+        isAvailable: true
+      });
+      loadAdmins();
+    } catch (err: any) {
+      alert(err.message || 'Gagal menyimpan data sales/admin');
+    }
+  };
+
   useEffect(() => {
     loadWaStatus();
     loadSettings();
+    loadAdmins();
 
     const interval = setInterval(loadWaStatus, 3000);
     return () => clearInterval(interval);
@@ -291,6 +355,22 @@ export const SettingsPage: React.FC = () => {
               settings.ai_agent_enabled === 'true' ? 'bg-emerald-500' : 'bg-slate-400'
             }`}
           />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('admins')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-xs font-semibold whitespace-nowrap transition-colors ${
+            activeTab === 'admins'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+              : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <Users className="w-4 h-4 text-indigo-500" />
+          <span>Tim Sales & Admin WhatsApp</span>
+          <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 font-bold">
+            {adminsList.length}
+          </span>
         </button>
       </div>
 
@@ -1071,6 +1151,251 @@ export const SettingsPage: React.FC = () => {
                 />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: TIM SALES & ADMIN WHATSAPP */}
+      {activeTab === 'admins' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-500" />
+                  Daftar Tim Sales & Admin Penerima Notifikasi
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Nomor WhatsApp yang terdaftar di sini akan menerima notifikasi otomatis ketika pelanggan memanggil sales, dan dapat dialihkan obrolannya jika sales sedang sibuk.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAdmin(null);
+                  setAdminForm({
+                    name: '',
+                    email: '',
+                    phone: '',
+                    password: '',
+                    role: 'SALES',
+                    isActive: true,
+                    isAvailable: true
+                  });
+                  setShowAdminModal(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-colors shrink-0"
+              >
+                <UserPlus className="w-4 h-4" />
+                Tambah Anggota Sales
+              </button>
+            </div>
+
+            {loadingAdmins ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
+                Memuat data sales & admin...
+              </div>
+            ) : adminsList.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                Belum ada tim sales yang didaftarkan.
+              </div>
+            ) : (
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 font-semibold">
+                      <th className="pb-3 px-3">Nama</th>
+                      <th className="pb-3 px-3">Email Login</th>
+                      <th className="pb-3 px-3">Nomor WhatsApp</th>
+                      <th className="pb-3 px-3">Role</th>
+                      <th className="pb-3 px-3 text-center">Status Terima Chat</th>
+                      <th className="pb-3 px-3 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {adminsList.map((adm) => (
+                      <tr key={adm.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white">
+                          {adm.name}
+                        </td>
+                        <td className="py-3 px-3 text-slate-500">
+                          {adm.email}
+                        </td>
+                        <td className="py-3 px-3 font-mono">
+                          {adm.phone ? (
+                            <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                              <Phone className="w-3.5 h-3.5" />
+                              {adm.phone}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Belum ada no WA</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            adm.role === 'SUPER_ADMIN'
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                              : adm.role === 'ADMIN'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                          }`}>
+                            {adm.role}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await apiRequest(`/auth/admins/${adm.id}`, {
+                                  method: 'PUT',
+                                  body: JSON.stringify({ isAvailable: !adm.isAvailable })
+                                });
+                                loadAdmins();
+                              } catch (e: any) {
+                                alert(e.message || 'Gagal update status');
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                              adm.isAvailable
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                            }`}
+                          >
+                            {adm.isAvailable ? '🟢 Siap Terima Chat' : '🔴 Sibuk / Istirahat'}
+                          </button>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAdmin(adm);
+                              setAdminForm({
+                                name: adm.name,
+                                email: adm.email,
+                                phone: adm.phone || '',
+                                password: '',
+                                role: adm.role,
+                                isActive: adm.isActive,
+                                isAvailable: adm.isAvailable
+                              });
+                              setShowAdminModal(true);
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Add / Edit Admin */}
+      {showAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xl">
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-indigo-500" />
+              {editingAdmin ? 'Edit Data Sales / Admin' : 'Tambah Sales / Admin Baru'}
+            </h4>
+
+            <form onSubmit={handleSaveAdmin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Lengkap
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminForm.name}
+                  onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                  placeholder="Contoh: Rendi Pratama"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Email (Untuk Login)
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={adminForm.email}
+                  onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                  placeholder="sales@dealer.com"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Nomor WhatsApp Pribadi Sales
+                </label>
+                <input
+                  type="text"
+                  value={adminForm.phone}
+                  onChange={(e) => setAdminForm({ ...adminForm, phone: e.target.value })}
+                  placeholder="Contoh: 6281234567890 (awali 62)"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Nomor ini akan menerima pesan notifikasi WA bot ketika pelanggan butuh penanganan sales.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {editingAdmin ? 'Password Baru (Kosongkan jika tidak diubah)' : 'Password'}
+                </label>
+                <input
+                  type="password"
+                  required={!editingAdmin}
+                  value={adminForm.password}
+                  onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                  placeholder="Minimal 6 karakter"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Role Akses
+                </label>
+                <select
+                  value={adminForm.role}
+                  onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="SALES">SALES (Penanganan Lead & Chat)</option>
+                  <option value="ADMIN">ADMIN (Operasional Dealer)</option>
+                  <option value="SUPER_ADMIN">SUPER_ADMIN (Akses Penuh)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-colors"
+                >
+                  Simpan Anggota
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

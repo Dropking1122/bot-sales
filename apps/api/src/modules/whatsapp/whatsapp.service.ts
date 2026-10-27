@@ -838,6 +838,40 @@ class WhatsAppManager {
         });
       }
 
+      // 🔔 Multi-Admin Notification: Broadcast alert to all active sales & admins with registered WA phone
+      try {
+        const availableAdmins = await prisma.admin.findMany({
+          where: {
+            isActive: true,
+            phone: { not: null }
+          },
+          select: { id: true, name: true, phone: true, isAvailable: true }
+        });
+
+        const activeSalesList = availableAdmins.filter(a => a.phone && a.phone.trim().length >= 8);
+        if (activeSalesList.length > 0) {
+          const clientName = contact.name || contact.phoneNormalized || 'Pelanggan';
+          const alertSalesMsg =
+            `🔔 *PANGGILAN SALES DARI PELANGGAN!*\n\n` +
+            `Pelanggan: *${clientName}*\n` +
+            `Nomor WA: ${contact.phoneNormalized || contact.phone || '-'}\n` +
+            `Pesan Klien: _"${text}"_\n\n` +
+            `📍 Buka & balas melalui DMS Admin:\nhttps://m.revd.dev/inbox\n\n` +
+            `_(Jika Anda berhalangan/sibuk, Anda bisa mengalihkan obrolan ini ke rekan sales lain langsung dari menu Inbox)_`;
+
+          for (const adm of activeSalesList) {
+            const cleanPhone = (adm.phone || '').replace(/[^0-9]/g, '');
+            if (cleanPhone.length >= 8) {
+              sendWhatsAppTextMessage(`${cleanPhone}@c.us`, alertSalesMsg).catch((err) => {
+                logger.warn({ err: err?.message, admin: adm.name }, 'Failed to send sales alert to admin WA');
+              });
+            }
+          }
+        }
+      } catch (alertErr) {
+        logger.warn({ alertErr }, 'Error triggering multi-admin sales notification');
+      }
+
       return 'Baik, percakapan ini sedang dialihkan ke tim sales kami. Sales konsultan kami akan segera menghubungi Anda langsung. Mohon ditunggu ya! 🙏';
     }
 
