@@ -280,11 +280,11 @@ export const AppLayout: React.FC = () => {
         </header>
 
         {/* Dynamic Page Outlet & Corporate Footer */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-between">
-          <div className="w-full">
+        <main className="flex-1 overflow-y-auto p-2 sm:p-6 lg:p-8 flex flex-col justify-between">
+          <div className="w-full flex-1 flex flex-col">
             <Outlet />
           </div>
-          <footer className="mt-10 pt-4 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <footer className="mt-6 sm:mt-10 pt-4 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
             <div className="flex items-center gap-1.5 font-medium">
               <span>© {new Date().getFullYear()}</span>
               <span className="font-bold text-slate-900 dark:text-white tracking-wide">

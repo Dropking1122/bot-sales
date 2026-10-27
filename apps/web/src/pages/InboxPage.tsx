@@ -183,10 +183,10 @@ export const InboxPage: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col sm:flex-row bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+    <div className="h-[calc(100dvh-7.5rem)] sm:h-[calc(100vh-8.5rem)] flex flex-col sm:flex-row bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
       {/* Left Column: Conversations List */}
-      <div className={`${selectedConv ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 md:w-96 border-r border-slate-200 dark:border-slate-800 flex-col shrink-0`}>
-        <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+      <div className={`${selectedConv ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 md:w-96 border-r border-slate-200 dark:border-slate-800 flex-col shrink-0 h-full overflow-hidden`}>
+        <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2 shrink-0">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -269,11 +269,11 @@ export const InboxPage: React.FC = () => {
       </div>
 
       {/* Right Column: Chat Box */}
-      <div className={`${!selectedConv ? 'hidden sm:flex' : 'flex'} flex-1 flex-col min-w-0`}>
+      <div className={`${!selectedConv ? 'hidden sm:flex' : 'flex'} flex-1 flex-col min-w-0 h-full overflow-hidden bg-slate-50/50 dark:bg-slate-900`}>
         {selectedConv ? (
           <>
             {/* Chat Header */}
-            <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/80 shrink-0">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => { setSelectedConv(null); setMessages([]); }}
@@ -389,23 +389,23 @@ export const InboxPage: React.FC = () => {
             {/* Input Composer */}
             <form
               onSubmit={handleSendReply}
-              className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 bg-white dark:bg-slate-900"
+              className="p-2.5 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 bg-white dark:bg-slate-900 shrink-0 z-10"
             >
               <input
                 type="text"
-                placeholder="Tulis balasan pesan untuk pelanggan (tekan Enter untuk kirim)..."
+                placeholder="Tulis balasan pesan untuk pelanggan..."
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 disabled={sending}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-900 dark:text-white disabled:opacity-50"
+                className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-900 dark:text-white disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={!replyText.trim() || sending}
-                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-sm transition-colors"
+                className="px-3.5 sm:px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-sm transition-colors shrink-0"
               >
                 {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                <span>{sending ? 'Mengirim...' : 'Kirim'}</span>
+                <span className="hidden sm:inline">{sending ? 'Mengirim...' : 'Kirim'}</span>
               </button>
             </form>
           </>
