@@ -70,6 +70,10 @@ npm test
 
 ### 5. Akun Administrator Bawaan
 - **URL Login**: `http://localhost:5173/login`
-- **Email**: `admin@botsales.local`
-- **Password**: `AdminPassword2026!`
+- **Email**: `admin@botsales.local` (atau nilai `SUPER_ADMIN_EMAIL`)
+- **Password**: nilai `SUPER_ADMIN_PASSWORD` di `.env` (dibuat saat menjalankan `npm run prisma:seed`)
 - **Role**: `SUPER_ADMIN`
+
+Tidak ada password bawaan yang tertanam di source. Seed akan menolak berjalan bila
+`SUPER_ADMIN_PASSWORD` belum diisi, dan menjalankan ulang seed tidak akan mengembalikan password
+yang sudah pernah diubah.

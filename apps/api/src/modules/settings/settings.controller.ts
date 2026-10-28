@@ -36,19 +36,23 @@ export async function getPublicSettings(_req: Request, res: Response, next: Next
 // Never ship provider credentials back to the browser, even to admins.
 const SECRET_SETTING_KEYS = new Set(['ai_api_key']);
 
+// Single redaction point: every handler that serializes BotSetting rows must go through this, so
+// the policy cannot be bypassed by a sibling response path.
+function maskSettings<T extends { key: string; value: string }>(settings: T[]) {
+  return settings.map((s) =>
+    SECRET_SETTING_KEYS.has(s.key)
+      ? { ...s, value: '', isSecret: true, hasValue: Boolean(s.value) }
+      : s
+  );
+}
+
 export async function getSettings(req: Request, res: Response, next: NextFunction) {
   try {
     const settings = await prisma.botSetting.findMany({
       orderBy: { key: 'asc' }
     });
 
-    const data = settings.map((s) =>
-      SECRET_SETTING_KEYS.has(s.key)
-        ? { ...s, value: '', isSecret: true, hasValue: Boolean(s.value) }
-        : s
-    );
-
-    return res.json({ success: true, data });
+    return res.json({ success: true, data: maskSettings(settings) });
   } catch (err) {
     next(err);
   }
@@ -117,7 +121,7 @@ export async function updateSettings(req: Request, res: Response, next: NextFunc
     await logAudit(req, 'UPDATE_SETTINGS', 'BotSetting', null, { keys: settingList.map((s) => s.key) });
 
     const updated = await prisma.botSetting.findMany({ orderBy: { key: 'asc' } });
-    return res.json({ success: true, message: 'Pengaturan berhasil diperbarui', data: updated });
+    return res.json({ success: true, message: 'Pengaturan berhasil diperbarui', data: maskSettings(updated) });
   } catch (err) {
     next(err);
   }

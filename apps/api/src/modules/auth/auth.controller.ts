@@ -1,11 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../config/db';
 import { config } from '../../config/env';
 import { LoginSchema, AdminUserSchema } from '@bot-sales/shared';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
+
+// Constant-time comparison: `!==` on a shared secret leaks length/prefix through timing.
+function safeEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
@@ -75,7 +83,9 @@ export async function passkeyLogin(req: Request, res: Response, next: NextFuncti
       return res.status(503).json({ success: false, message: 'Otentikasi passkey dinonaktifkan di server ini' });
     }
 
-    if (!passkey || String(passkey).trim() !== serverPasskey.trim()) {
+    if (!passkey || !safeEqual(String(passkey).trim(), serverPasskey.trim())) {
+      // Audit denied attempts: a silent 401 makes offline guessing invisible.
+      await logAudit(req, 'FAILED_PASSKEY', 'SECURITY_ALERT', null, { reason: 'Invalid passkey' }).catch(() => {});
       return res.status(401).json({ success: false, message: 'Kunci otorisasi tidak valid' });
     }
 

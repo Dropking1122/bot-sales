@@ -7,17 +7,27 @@ async function main() {
   console.log('Seeding initial data...');
 
   // 1. Super Admin
+  // The initial credential must come from the environment. It was previously a source literal
+  // ('Admin123!') that the upsert re-applied on every run, which both published the credential and
+  // silently reverted any rotation.
   const adminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@botsales.local';
-  const adminPassword = 'Admin123!';
+  const adminPassword = process.env.SUPER_ADMIN_PASSWORD;
   const adminName = process.env.SUPER_ADMIN_NAME || 'Super Administrator';
+
+  if (!adminPassword || adminPassword.length < 12) {
+    throw new Error(
+      'SUPER_ADMIN_PASSWORD is required and must be at least 12 characters. Set it in .env ' +
+        '(see .env.example) before running the seed.'
+    );
+  }
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const superAdmin = await prisma.admin.upsert({
+    // update does NOT set passwordHash: re-running the seed must not reset a rotated password.
     where: { email: adminEmail },
     update: {
       name: adminName,
-      passwordHash,
       role: AdminRole.SUPER_ADMIN,
       isActive: true
     },

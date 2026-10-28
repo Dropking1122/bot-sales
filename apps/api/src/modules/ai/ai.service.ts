@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { prisma } from '../../config/db';
 import { logger } from '../../config/logger';
 
@@ -84,17 +82,10 @@ export async function getAiConfig(): Promise<AiAgentConfig> {
 
   const map = new Map(settings.map((s) => [s.key, s.value]));
 
-  let fallbackKey = process.env.OPENAI_API_KEY || '';
-  if (!fallbackKey) {
-    try {
-      const hermesEnvPath = '/root/.hermes/.env';
-      if (fs.existsSync(hermesEnvPath)) {
-        const raw = fs.readFileSync(hermesEnvPath, 'utf8');
-        const match = raw.match(/OPENAI_API_KEY=([^\r\n]+)/);
-        if (match && match[1]) fallbackKey = match[1].trim();
-      }
-    } catch {}
-  }
+  // Credentials are read from the AI settings row or this service's own environment only.
+  // ponytail: the '/root/.hermes/.env' scrape was removed — cross-application credential reads
+  // have undefined ownership. Set OPENAI_API_KEY (or the ai_api_key setting) for this app instead.
+  const fallbackKey = process.env.OPENAI_API_KEY || '';
 
   const enabled = map.get('ai_agent_enabled') === 'true';
   const providerUrl = (map.get('ai_provider_url') || 'http://127.0.0.1:20128/v1').replace(/\/+$/, '');

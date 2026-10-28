@@ -5,13 +5,40 @@ import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config(); // fallback to current dir
 
+// Secrets must be provided by the environment. Falling back to a literal that is committed to
+// this repository turns a public constant into the deployment's signing key / DB password, so a
+// missing value is a startup failure instead of a silent downgrade.
+const PUBLISHED_SECRETS = ['super_secret_jwt_key_bot_sales_2026_change_in_production'];
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value || !value.trim()) {
+    throw new Error(
+      `Missing required environment variable ${name}. Copy .env.example to .env and set it ` +
+        `(see README.md). The server refuses to start on a committed default.`
+    );
+  }
+  return value;
+}
+
+function requiredSecret(name: string): string {
+  const value = required(name);
+  if (value.length < 32 || PUBLISHED_SECRETS.includes(value)) {
+    throw new Error(
+      `${name} must be a private value of at least 32 characters. Generate one with ` +
+        `\`openssl rand -hex 32\` and keep it out of version control (see README.md).`
+    );
+  }
+  return value;
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '4000', 10),
   apiUrl: process.env.API_URL || 'http://localhost:4000',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
 
-  databaseUrl: process.env.DATABASE_URL || 'postgresql://bot_sales_user:BotSalesSecurePass2026!@localhost:5432/bot_sales_db?schema=public',
+  databaseUrl: required('DATABASE_URL'),
 
   redis: {
     host: process.env.REDIS_HOST || '127.0.0.1',
@@ -20,7 +47,7 @@ export const config = {
   },
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'super_secret_jwt_key_bot_sales_2026_change_in_production',
+    secret: requiredSecret('JWT_SECRET'),
     expiresIn: process.env.JWT_EXPIRES_IN || '7d'
   },
 

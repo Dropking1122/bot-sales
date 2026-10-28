@@ -75,7 +75,8 @@ server {
 ```
 
 ## 4. Akun Bawaan (Default Seed)
-- Email: `admin@botsales.local`
-- Password: `AdminPassword2026!`
+- Email: `admin@botsales.local` (atau `SUPER_ADMIN_EMAIL`)
+- Password: nilai `SUPER_ADMIN_PASSWORD` yang Anda isi di `.env` — tidak ada password bawaan di source
 - Role: `SUPER_ADMIN`
-*(Wajib diganti setelah login pertama di dashboard)*
+- Seed menolak berjalan tanpa `SUPER_ADMIN_PASSWORD` (min. 12 karakter) dan tidak mengembalikan
+  password yang sudah diubah bila dijalankan ulang.
