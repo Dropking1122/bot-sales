@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../lib/api';
+import { isLikelyLid } from '@bot-sales/shared';
 import {
   MessageSquare,
   Search,
@@ -289,7 +290,7 @@ export const InboxPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="font-mono text-[11px] text-slate-500 mt-0.5 truncate">
-                    {c.contact?.phoneNormalized && (c.contact.phoneNormalized.startsWith('1') || c.contact.phoneNormalized.startsWith('2') || c.contact.phoneNormalized.startsWith('4')) && c.contact.phoneNormalized.length >= 14 ? (
+                    {isLikelyLid(c.contact?.phoneNormalized) ? (
                       <span className="text-amber-600 dark:text-amber-400 font-sans text-[10px]">
                         🔒 [WhatsApp Privacy ID]
                       </span>
@@ -336,7 +337,7 @@ export const InboxPage: React.FC = () => {
                   {selectedConv.contact?.name || 'Pelanggan'}
                 </p>
                 <p className="font-mono text-xs text-slate-500">
-                  {selectedConv.contact?.phoneNormalized && (selectedConv.contact.phoneNormalized.startsWith('1') || selectedConv.contact.phoneNormalized.startsWith('2') || selectedConv.contact.phoneNormalized.startsWith('4')) && selectedConv.contact.phoneNormalized.length >= 14 ? (
+                  {isLikelyLid(selectedConv.contact?.phoneNormalized) ? (
                     <span className="text-amber-600 dark:text-amber-400 font-sans text-xs flex items-center gap-1">
                       <span>🔒 WhatsApp Privacy ID (LID)</span>
                     </span>

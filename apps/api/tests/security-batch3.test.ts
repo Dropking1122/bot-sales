@@ -80,7 +80,7 @@ test('the SSRF surface is allow-listed on both read and write paths', () => {
 
 test('media resolution can only yield a path inside uploads', () => {
   const wa = src('modules/whatsapp/whatsapp.service.ts');
-  const resolve = wa.slice(wa.indexOf('public resolveLocalMediaPath'), wa.indexOf('isLikelyLid'));
+  const resolve = wa.slice(wa.indexOf('public resolveLocalMediaPath'), wa.indexOf('public normalizeChatJid'));
   // Strip the explanatory comments: the words being probed for are named in them.
   const code = resolve.replace(/\/\/.*$/gm, '');
   assert.doesNotMatch(code, /\/root\/bot-sales\/storage/, 'no hard-coded host path probe');
@@ -118,11 +118,44 @@ test('broadcast consent is an invariant and retries are idempotent', () => {
   assert.match(worker, /where: \{ status: 'SENDING' \}[\s\S]{0,120}status: 'FAILED'/, 'orphaned SENDING rows must not be reset to PENDING');
 });
 
+test('the LID resolver is offered every LID contact, not just 260/479 ones', () => {
+  const wa = src('modules/whatsapp/whatsapp.service.ts');
+  const sync = wa.slice(wa.indexOf('public async syncLidContactsToPhone'), wa.indexOf('public async handleIncomingMessage'));
+  assert.doesNotMatch(sync, /startsWith: '260'/, 'the 260 prefix filter must be gone');
+  assert.doesNotMatch(sync, /startsWith: '479'/, 'the 479 prefix filter must be gone');
+  assert.match(sync, /internalNotes: \{ contains: '\[LID:' \}/, 'the recorded LID note is the selection key');
+  // The recorded note must win over `phone`: after an upgrade `phone` holds the real number.
+  assert.match(sync, /match\(\/\\\[LID:/, 'the LID must be read back from internalNotes');
+  // The sync runs on every reconnect, so the note append has to be conditional or it accumulates.
+  assert.match(sync, /alreadyNoted/, 'the note append must be guarded against re-sync');
+  // ...and a contact that already holds a real number must not be re-looked-up on every reconnect.
+  assert.match(sync, /alreadyReal/, 'an upgraded contact must not be re-resolved forever');
+});
+
 test('a LID is canonicalised once, by shape, everywhere', () => {
   const wa = src('modules/whatsapp/whatsapp.service.ts');
+
+  // Exactly one definition exists, and it is the shared one the SPA also imports. The manager must
+  // delegate rather than keep a second copy that could drift from the badge.
+  const shared = fs.readFileSync(
+    path.join(__dirname, '..', '..', '..', 'packages', 'shared', 'src', 'constants', 'index.ts'),
+    'utf8'
+  );
+  const sharedFn = shared.slice(shared.indexOf('export function isLikelyLid'));
+  assert.match(sharedFn, /\/\^\\d\{14,16\}\$\/\.test\(v\)/, 'a LID is 14-16 digits');
+  assert.doesNotMatch(sharedFn, /startsWith\('260'\)/, 'prefix tests must not shadow real +260 numbers');
+
   const fn = wa.slice(wa.indexOf('public isLikelyLid'), wa.indexOf('public normalizeChatJid'));
-  assert.match(fn, /\/\^\\d\{14,16\}\$\/\.test\(v\)/, 'a LID is 14-16 digits');
-  assert.doesNotMatch(fn, /startsWith\('260'\)/, 'prefix tests must not shadow real +260 numbers');
+  assert.match(fn, /isLikelyLidShape\(value\)/, 'the manager must delegate to the shared definition');
+  assert.doesNotMatch(fn, /\d\{14,16\}/, 'the manager must not keep its own copy of the shape rule');
+
+  // The SPA must not re-implement the predicate either: three different definitions of "LID"
+  // (sync used prefixes, the badge used 1/2/4 + length) is what hid the missing numbers.
+  for (const page of ['ContactsPage.tsx', 'InboxPage.tsx']) {
+    const ui = fs.readFileSync(path.join(__dirname, '..', '..', 'web', 'src', 'pages', page), 'utf8');
+    assert.match(ui, /import \{ isLikelyLid \} from '@bot-sales\/shared'/, `${page} must use the shared predicate`);
+    assert.doesNotMatch(ui, /startsWith\('1'\)|startsWith\('2'\)|startsWith\('4'\)/, `${page} must not re-implement the LID test`);
+  }
 
   const normalize = wa.slice(wa.indexOf('public normalizeChatJid'), wa.indexOf('public normalizeChatJid') + 600);
   assert.ok(

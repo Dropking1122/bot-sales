@@ -5,7 +5,7 @@ import qrcode from 'qrcode';
 import { config } from '../../config/env';
 import { logger } from '../../config/logger';
 import { prisma } from '../../config/db';
-import { normalizePhoneNumber, formatRupiah, WhatsAppStatus, isValidPhoneNumber } from '@bot-sales/shared';
+import { normalizePhoneNumber, formatRupiah, WhatsAppStatus, isValidPhoneNumber, isLikelyLid as isLikelyLidShape } from '@bot-sales/shared';
 import { logAudit } from '../../utils/audit';
 import {
   calculateFinancing,
@@ -323,12 +323,16 @@ class WhatsAppManager {
   public async syncLidContactsToPhone(): Promise<void> {
     if (!this.client) return;
     try {
+      // Candidates are contacts whose stored identifier is a LID. The previous test asked for
+      // phoneNormalized prefixes '260'/'479', which real LIDs only sometimes use, so every other
+      // LID contact was never handed to the resolver and kept showing an opaque id forever.
+      // '[LID:' is written at creation time for exactly this case, and '@lid' covers JID storage.
       const contacts = await prisma.contact.findMany({
         where: {
           OR: [
             { phone: { contains: '@lid' } },
-            { phoneNormalized: { startsWith: '260' } },
-            { phoneNormalized: { startsWith: '479' } }
+            { phoneNormalized: { contains: '@lid' } },
+            { internalNotes: { contains: '[LID:' } }
           ]
         }
       });
@@ -339,8 +343,24 @@ class WhatsAppManager {
         let effectivePhone = c.phoneNormalized;
 
         try {
-          const lidJid = c.phone.includes('@') ? c.phone : `${c.phone}@lid`;
-          const realPhone = await this.resolveLidToPn(lidJid);
+          // The recorded note is authoritative: once a contact is upgraded its phone holds the real
+          // number, so deriving the JID from `phone` would ask about a non-existent `628xx@lid`.
+          const noteLid = c.internalNotes?.match(/\[LID:\s*([^\]]+)\]/)?.[1]?.trim() || null;
+          const lidSource = noteLid || c.phone;
+          // A contact keeps its '[LID:' note after being upgraded, so it stays a candidate forever.
+          // ponytail: once `phone` holds a real number the lookup can only re-learn it, so skip the
+          // network round-trip; drop this guard if a number is ever observed to change.
+          // The LID shape must be tested here too: isValidPhoneNumber() is permissive and accepts a
+          // 14-16 digit LID, so testing it alone would mark an unresolved LID as "already real" and
+          // the contact would never be upgraded.
+          const alreadyReal = isValidPhoneNumber(c.phone) && !isLikelyLidShape(c.phone);
+          const needsResolve =
+            !alreadyReal &&
+            Boolean(lidSource) &&
+            (Boolean(noteLid) || this.isLikelyLid(c.phoneNormalized) || c.phone.includes('@lid'));
+
+          const lidJid = lidSource.includes('@') ? lidSource : `${lidSource}@lid`;
+          const realPhone = needsResolve ? await this.resolveLidToPn(lidJid) : null;
           if (realPhone && isValidPhoneNumber(realPhone)) {
             const normalized = normalizePhoneNumber(realPhone);
             logger.info({ contactId: c.id, old: c.phone, resolved: realPhone }, 'Synced contact LID to real phone');
@@ -379,12 +399,19 @@ class WhatsAppManager {
               await prisma.contact.delete({ where: { id: c.id } }).catch(() => {});
             } else {
               effectivePhone = normalized;
+              // The note is appended only if absent: this runs on every reconnect, so an
+              // unconditional append grew the field by one entry per sync.
+              const alreadyNoted = Boolean(c.internalNotes?.includes(lidJid));
               await prisma.contact.update({
                 where: { id: c.id },
                 data: {
                   phone: realPhone,
                   phoneNormalized: normalized,
-                  internalNotes: c.internalNotes ? `${c.internalNotes} [LID: ${lidJid}]` : `[LID: ${lidJid}]`
+                  internalNotes: alreadyNoted
+                    ? c.internalNotes!
+                    : c.internalNotes
+                      ? `${c.internalNotes} [LID: ${lidJid}]`
+                      : `[LID: ${lidJid}]`
                 }
               });
               await prisma.lead.updateMany({
@@ -1700,10 +1727,10 @@ class WhatsAppManager {
   // to be a LID to syncLidContactsToPhone and a phone number to sendMessage.
   // LIDs are 14-16 digits, so prefix tests for 260/479 are subsumed by the length rule; keeping
   // only the length rule avoids misreading a real shorter +260 number as a LID.
+  // Delegates to the shared definition: the SPA badge, persistence and send routing must agree on
+  // what a LID is, or one layer stores a value another reads as a phone number.
   public isLikelyLid(value: string): boolean {
-    const v = value.trim();
-    if (!v || v.includes('@')) return false;
-    return /^\d{14,16}$/.test(v);
+    return isLikelyLidShape(value);
   }
 
   public normalizeChatJid(toPhoneOrJid: string): string {

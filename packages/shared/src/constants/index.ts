@@ -47,6 +47,19 @@ export function isValidPhoneNumber(phone: string): boolean {
 }
 
 /**
+ * A WhatsApp privacy LID is a 14-16 digit opaque identifier, not a phone number.
+ * isValidPhoneNumber() is permissive (it accepts any 9-15 digit run), so a LID also passes as a
+ * phone number. Shape must therefore be tested FIRST wherever the two are told apart. This is the
+ * single definition: the API (persistence, send routing) and the SPA (badge) must agree, otherwise
+ * one layer stores a value the other reads as a phone number.
+ */
+export function isLikelyLid(value: string | null | undefined): boolean {
+  const v = (value || '').trim();
+  if (!v || v.includes('@')) return false;
+  return /^\d{14,16}$/.test(v);
+}
+
+/**
  * Formula injection protection for CSV / Excel cells
  * Prepends a single quote if string starts with dangerous characters =, +, -, @, \t, \r
  */

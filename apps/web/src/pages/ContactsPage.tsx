@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../lib/api';
+import { isLikelyLid } from '@bot-sales/shared';
 import { Users, Plus, Search, Tag, Check, AlertCircle, X, Loader2, ShieldCheck, ShieldAlert, Tag as TagIcon } from 'lucide-react';
 
 export const ContactsPage: React.FC = () => {
@@ -229,7 +230,7 @@ export const ContactsPage: React.FC = () => {
                       {c.email && <p className="text-[10px] text-slate-400 font-normal">{c.email}</p>}
                     </td>
                     <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200">
-                      {(c.phoneNormalized.startsWith('1') || c.phoneNormalized.startsWith('2') || c.phoneNormalized.startsWith('4')) && c.phoneNormalized.length >= 14 ? (
+                      {isLikelyLid(c.phoneNormalized) ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-sans" title={`WhatsApp Privacy LID: ${c.phoneNormalized}`}>
                           <span>🔒 WA Privacy ID</span>
                         </span>
@@ -314,7 +315,7 @@ export const ContactsPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between text-xs py-1.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                  {(c.phoneNormalized.startsWith('1') || c.phoneNormalized.startsWith('2') || c.phoneNormalized.startsWith('4')) && c.phoneNormalized.length >= 14 ? (
+                  {isLikelyLid(c.phoneNormalized) ? (
                     <span className="text-amber-600 dark:text-amber-400 font-sans font-medium text-[11px]">
                       🔒 WA Privacy ID
                     </span>

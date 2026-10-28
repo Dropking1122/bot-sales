@@ -9,6 +9,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  build: {
+    // @bot-sales/shared is a linked workspace package compiled to CommonJS, so it is not under
+    // node_modules and Vite's default commonjs include pattern misses it — its __exportStar
+    // re-exports then read as "not exported".
+    commonjsOptions: {
+      include: [/shared[\\/]dist/, /node_modules/]
+    }
+  },
   server: {
     port: 5173,
     proxy: {
