@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/db';
 import { logAudit } from '../../utils/audit';
+import { isAllowedProviderUrl } from '../ai/ai.service';
 
 export const DEFAULT_BRANDING = {
   web_title: 'DMS — Dealer Management System | REVDSTORE',
@@ -111,6 +112,18 @@ export async function updateSettings(req: Request, res: Response, next: NextFunc
     for (const s of settingList) {
       // A blanked secret means "unchanged", not "erase the credential".
       if (SECRET_SETTING_KEYS.has(s.key) && !String(s.value ?? '').trim()) continue;
+      // Also validate on the write path: storing an off-list provider URL would move the SSRF
+      // from the test endpoint to the background agent, which fetches it with the same key.
+      if (s.key === 'ai_provider_url') {
+        const next = String(s.value ?? '');
+        const current = await prisma.botSetting.findUnique({ where: { key: 'ai_provider_url' } });
+        if (next && !isAllowedProviderUrl(next, current?.value || '')) {
+          return res.status(400).json({
+            success: false,
+            message: 'Host ai_provider_url tidak diizinkan. Set AI_ALLOWED_PROVIDER_HOSTS untuk mengizinkannya.'
+          });
+        }
+      }
       await prisma.botSetting.upsert({
         where: { key: s.key },
         update: { value: String(s.value ?? '') },

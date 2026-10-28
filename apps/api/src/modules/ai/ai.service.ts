@@ -1,6 +1,38 @@
 import { prisma } from '../../config/db';
 import { logger } from '../../config/logger';
 
+// The server calls the AI provider with its own credential, so the destination must come from
+// configuration and never from a request body — otherwise /settings/test-ai is an open proxy that
+// hands the stored key (and a readable upstream response) to whatever host the caller names.
+// Allow-list, not deny-list: the provider can legitimately be a loopback sidecar such as
+// 127.0.0.1:20128, so "private address" is not by itself disqualifying.
+export function isAllowedProviderUrl(candidate: string, configuredProviderUrl: string): boolean {
+  const origin = (value: string): string | null => {
+    try {
+      const u = new URL(value);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      return u.host.toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+
+  const target = origin(candidate);
+  if (!target) return false;
+
+  const allowed = new Set(
+    [
+      origin(configuredProviderUrl),
+      origin(process.env.AI_PROVIDER_URL || 'http://127.0.0.1:20128/v1'),
+      ...(process.env.AI_ALLOWED_PROVIDER_HOSTS || '').split(',').map((h) => h.trim())
+    ]
+      .filter(Boolean)
+      .map((h) => h!.toLowerCase())
+  );
+
+  return allowed.has(target);
+}
+
 export interface AiAgentConfig {
   enabled: boolean;
   providerUrl: string;
@@ -248,6 +280,11 @@ ${config.customFaq}
   }
 }
 
+export async function isAllowedProviderHost(candidate: string): Promise<boolean> {
+  const row = await prisma.botSetting.findUnique({ where: { key: 'ai_provider_url' } });
+  return isAllowedProviderUrl(candidate, row?.value || '');
+}
+
 export async function testAiAgent(options?: {
   providerUrl?: string;
   apiKey?: string;
@@ -258,6 +295,13 @@ export async function testAiAgent(options?: {
   try {
     const config = await getAiConfig();
     const providerUrl = (options?.providerUrl || config.providerUrl).replace(/\/+$/, '');
+    if (!(await isAllowedProviderHost(providerUrl))) {
+      logger.warn({ providerUrl }, 'AI test blocked: provider host not allow-listed');
+      return {
+        success: false,
+        error: 'Host provider AI tidak diizinkan. Ubah ai_provider_url atau set AI_ALLOWED_PROVIDER_HOSTS.'
+      };
+    }
     const apiKey = options?.apiKey !== undefined ? options.apiKey : config.apiKey;
     const model = options?.model || config.model;
     const assistantName = options?.assistantName || config.assistantName || 'Vina';
@@ -286,7 +330,10 @@ export async function testAiAgent(options?: {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      return { success: false, error: `Upstream error (${res.status}): ${errText}` };
+      // Log the upstream body, do not reflect it: the response body of an operator-named host is
+      // not ours to hand back and turns this endpoint into a readable oracle.
+      logger.error({ status: res.status, errText }, 'AI test upstream returned error');
+      return { success: false, error: `Provider AI menolak permintaan (HTTP ${res.status}).` };
     }
 
     const data: any = await res.json();
@@ -298,7 +345,8 @@ export async function testAiAgent(options?: {
 
     return { success: true, reply };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Gagal menghubungi server AI' };
+    logger.error({ err: err?.message || err }, 'AI test call failed');
+    return { success: false, error: 'Gagal menghubungi server AI. Periksa URL provider dan jaringan.' };
   }
 }
 

@@ -7,17 +7,17 @@ export interface RecipientFilter {
   tags?: string[];
   interestedMotorcycle?: string;
   sources?: string[];
+  /** @deprecated Consent is an invariant, not a filter: the audience is always GRANTED-only. */
   onlyConsented?: boolean;
 }
 
 export async function resolveBroadcastRecipients(filter: RecipientFilter) {
   const where: any = {
-    isOptOut: false // strictly exclude opt-out contacts
+    isOptOut: false, // strictly exclude opt-out contacts
+    // Consent is a property of the recipient, not a switch the requester may flip: a promotional
+    // audience is GRANTED-only, always. (docs/BROADCAST.md documents this as the audience rule.)
+    consentStatus: 'GRANTED'
   };
-
-  if (filter.onlyConsented !== false) {
-    where.consentStatus = 'GRANTED'; // strictly require consent
-  }
 
   if (filter.contactIds && filter.contactIds.length > 0) {
     where.id = { in: filter.contactIds };

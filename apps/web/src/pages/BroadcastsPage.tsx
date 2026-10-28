@@ -30,7 +30,6 @@ export const BroadcastsPage: React.FC = () => {
   const [campaignType, setCampaignType] = useState('PROMO');
   const [description, setDescription] = useState('');
   const [tagsFilter, setTagsFilter] = useState('');
-  const [onlyConsented, setOnlyConsented] = useState(true);
   const [messageTemplate, setMessageTemplate] = useState(
     'Halo {{nama}}! Dapatkan promo spesial motor Honda & Yamaha dengan DP ringan dan cicilan terjangkau bulan ini. Balas pesan ini untuk info promo selengkapnya! 🏍️'
   );
@@ -68,7 +67,7 @@ export const BroadcastsPage: React.FC = () => {
       const res = await apiRequest('/broadcasts/preview', {
         method: 'POST',
         body: JSON.stringify({
-          recipientFilter: { tags, onlyConsented },
+          recipientFilter: { tags },
           messageTemplate
         })
       });
@@ -95,7 +94,7 @@ export const BroadcastsPage: React.FC = () => {
           campaignType,
           description: description.trim() || null,
           messageTemplate,
-          recipientFilter: { tags, onlyConsented }
+          recipientFilter: { tags }
         })
       });
 
@@ -481,18 +480,10 @@ export const BroadcastsPage: React.FC = () => {
                     />
                   </div>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="checkbox"
-                      id="onlyConsented"
-                      checked={onlyConsented}
-                      onChange={(e) => setOnlyConsented(e.target.checked)}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <label htmlFor="onlyConsented" className="text-xs text-slate-700 dark:text-slate-300">
-                      Hanya kirim ke kontak dengan status persetujuan <span className="font-semibold text-emerald-600">GRANTED</span>
-                    </label>
-                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+                    Hanya kontak dengan persetujuan <span className="font-semibold text-emerald-600">GRANTED</span> yang
+                    akan menerima kampanye ini. Kontak yang opt-out otomatis dikecualikan.
+                  </p>
 
                   <div className="space-y-1 pt-2">
                     <label className="text-xs font-semibold">Template Pesan WhatsApp</label>

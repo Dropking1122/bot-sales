@@ -4,6 +4,8 @@ import { BroadcastCampaignSchema, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, isValidPho
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
 import { resolveBroadcastRecipients, interpolateTemplate, computeMotorcycleCicilan } from './broadcast.service';
+import { MAX_SEND_ATTEMPTS } from '../../jobs/broadcastWorker';
+import { waManager } from '../whatsapp/whatsapp.service';
 import ExcelJS from 'exceljs';
 
 export async function listCampaigns(req: Request, res: Response, next: NextFunction) {
@@ -113,8 +115,11 @@ export async function createCampaign(req: Request, res: Response, next: NextFunc
       const recipientData = await Promise.all(
         recipients.map(async (r) => {
           const personalized = await interpolateTemplate(data.messageTemplate, r, motorcycle, precomputedCicilan);
-          const resolvedPhone =
-            isValidPhoneNumber(r.phoneNormalized)
+          // A LID is not a phone number, so decide by shape first: isValidPhoneNumber() accepts
+          // 14-15 digit LIDs too, which used to snapshot them as an '@c.us' target.
+          const resolvedPhone = waManager.isLikelyLid(r.phoneNormalized || '')
+            ? r.phoneNormalized
+            : isValidPhoneNumber(r.phoneNormalized)
               ? r.phoneNormalized
               : (r.phone && !r.phone.includes('@lid') ? r.phone : r.phoneNormalized);
 
@@ -292,10 +297,19 @@ export async function retryCampaign(req: Request, res: Response, next: NextFunct
       throw new AppError('Tidak ada penerima yang berstatus gagal untuk dikirim ulang', 400);
     }
 
-    // Reset failed recipients to PENDING with refreshed phone number
+    // Reset failed recipients to PENDING with refreshed phone number. Attempts that already used
+    // up MAX_SEND_ATTEMPTS stay FAILED: a permanently undeliverable number must not be loopable.
+    let requeued = 0;
+    let exhausted = 0;
     for (const r of campaign.recipients) {
+      if (r.retryCount >= MAX_SEND_ATTEMPTS) {
+        exhausted += 1;
+        continue; // stays FAILED, visible to the operator
+      }
+      // Same shape-first rule as creation and the worker: a LID must not be re-normalised into a
+      // phone number on retry, or the retry silently targets the wrong destination.
       const refreshedPhone =
-        r.contact?.phoneNormalized && isValidPhoneNumber(r.contact.phoneNormalized)
+        r.contact?.phoneNormalized && (waManager.isLikelyLid(r.contact.phoneNormalized) || isValidPhoneNumber(r.contact.phoneNormalized))
           ? r.contact.phoneNormalized
           : r.phone;
 
@@ -308,6 +322,17 @@ export async function retryCampaign(req: Request, res: Response, next: NextFunct
           failedAt: null
         }
       });
+      requeued += 1;
+    }
+
+    // Nothing left to retry: bail out BEFORE mutating campaign state, so a rejected retry does not
+    // leave the campaign RUNNING with no PENDING recipients.
+    if (requeued === 0) {
+      await logAudit(req, 'RETRY_CAMPAIGN', 'BroadcastCampaign', id, { requeued, exhausted });
+      throw new AppError(
+        `Semua ${exhausted} penerima gagal sudah mencapai batas ${MAX_SEND_ATTEMPTS} percobaan. Perbaiki data kontak lalu buat kampanye baru.`,
+        400
+      );
     }
 
     await prisma.broadcastCampaign.update({
@@ -319,13 +344,13 @@ export async function retryCampaign(req: Request, res: Response, next: NextFunct
       }
     });
 
-    await logAudit(req, 'RETRY_CAMPAIGN', 'BroadcastCampaign', id, {
-      retriedRecipients: campaign.recipients.length
-    });
+    await logAudit(req, 'RETRY_CAMPAIGN', 'BroadcastCampaign', id, { requeued, exhausted });
 
     return res.json({
       success: true,
-      message: `Mengulang pengiriman ${campaign.recipients.length} penerima yang gagal`
+      message:
+        `Mengulang pengiriman ${requeued} penerima yang gagal` +
+        (exhausted > 0 ? `; ${exhausted} dilewati (batas percobaan tercapai).` : '.')
     });
   } catch (err) {
     next(err);

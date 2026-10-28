@@ -5,17 +5,30 @@ import { isValidPhoneNumber } from '@bot-sales/shared';
 
 let isWorkerRunning = false;
 
+/**
+ * A recipient that has reached this many failed attempts is not retried automatically (retryCampaign
+ * refuses it too), so a permanently failing number cannot loop the queue forever.
+ */
+export const MAX_SEND_ATTEMPTS = 3;
+
 export function startBroadcastWorker() {
   if (isWorkerRunning) return;
   isWorkerRunning = true;
 
   logger.info('Starting Broadcast Background Worker...');
 
-  // Reset orphaned SENDING recipients from prior interrupted runs
+  // Orphaned SENDING rows come from a process that died between marking and the send result, so
+  // delivery is UNKNOWN - not "not sent". Resetting them to PENDING (the old behaviour) re-sent
+  // the promotion on every restart; FAILED with an explicit reason keeps the decision with the
+  // operator, who can use "Kirim ulang" deliberately.
   prisma.broadcastRecipient.updateMany({
     where: { status: 'SENDING' },
-    data: { status: 'PENDING' }
-  }).catch((err) => logger.error({ err }, 'Failed to reset orphaned SENDING recipients'));
+    data: {
+      status: 'FAILED',
+      errorMessage: 'Pengiriman terputus (proses berhenti); status pengiriman tidak diketahui.',
+      failedAt: new Date()
+    }
+  }).catch((err) => logger.error({ err }, 'Failed to close orphaned SENDING recipients'));
 
   const loop = async () => {
     try {
@@ -86,13 +99,17 @@ export function startBroadcastWorker() {
         return;
       }
 
-      // Check opt-out before sending
-      if (pendingRecipient.contact.isOptOut) {
+      // Re-check consent AND opt-out at send time: the audience was snapshotted when the campaign
+      // was created, so a contact who withdrew consent afterwards must not still receive it.
+      if (pendingRecipient.contact.isOptOut || pendingRecipient.contact.consentStatus !== 'GRANTED') {
+        const reason = pendingRecipient.contact.isOptOut
+          ? 'Kontak telah memilih opt-out'
+          : `Persetujuan kontak tidak lagi GRANTED (${pendingRecipient.contact.consentStatus})`;
         await prisma.broadcastRecipient.update({
           where: { id: pendingRecipient.id },
           data: {
             status: 'SKIPPED',
-            errorMessage: 'Kontak telah memilih opt-out',
+            errorMessage: reason,
             failedAt: new Date()
           }
         });
@@ -120,7 +137,13 @@ export function startBroadcastWorker() {
       const lidMatch = contact?.internalNotes?.match(/\[LID:\s*([^\]]+)\]/);
       const recordedLid = lidMatch ? lidMatch[1].trim() : (contact?.phone?.includes('@lid') ? contact.phone : null);
 
-      if (contact?.phoneNormalized && isValidPhoneNumber(contact.phoneNormalized)) {
+      // Shape first: a LID is 14-16 digits and isValidPhoneNumber() would accept a 14-15 digit one,
+      // so a LID must be sent as the primary target rather than defaulted to '@c.us'.
+      const normalizedIsLid = waManager.isLikelyLid(contact?.phoneNormalized || '');
+      if (normalizedIsLid) {
+        targetPhone = contact.phoneNormalized;
+        fallbackJid = recordedLid && recordedLid !== contact.phoneNormalized ? recordedLid : null;
+      } else if (contact?.phoneNormalized && isValidPhoneNumber(contact.phoneNormalized)) {
         targetPhone = contact.phoneNormalized;
         fallbackJid = recordedLid;
       } else if (recordedLid) {

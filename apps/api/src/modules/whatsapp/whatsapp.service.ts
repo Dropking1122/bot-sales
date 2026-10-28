@@ -21,6 +21,32 @@ export interface BotResponsePayload {
   mediaType?: string;
 }
 
+// Debounce bounds (Batch 3). The buffer is only a reply delay, so a peer that keeps typing must
+// not be able to retain process memory, stall its own replies forever, or make the API process
+// (which also serves HTTP and the broadcast worker) the victim. Volume caps and an absolute
+// deadline measured from the first buffered message force a flush.
+
+export const DEBOUNCE_MS = 2500;
+export const DEBOUNCE_HOLD_MS = 15000;
+export const MAX_DEBOUNCE_TEXTS = 20;
+export const MAX_DEBOUNCE_CHARS = 4000;
+export const MAX_DEBOUNCE_PEERS = 500;
+
+/**
+ * Media confinement (Batch 3): an admin-supplied mediaPath/mediaUrl may only ever select a file
+ * physically inside storage/uploads. Anything else (absolute host paths such as /etc/passwd or
+ * /root/bot-sales/.env, '../' escapes) is rejected instead of being read and egressed to a
+ * WhatsApp peer. Returns the resolved path when inside the root, otherwise null.
+ */
+export function confineMediaPath(candidate?: string | null): string | null {
+  if (!candidate || !candidate.trim()) return null;
+  const root = path.resolve(config.storage.uploadsDir);
+  const resolved = path.resolve(candidate);
+  const rel = path.relative(root, resolved);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return resolved;
+}
+
 class WhatsAppManager {
   private client: Client | null = null;
   private status: WhatsAppStatus = 'DISCONNECTED';
@@ -34,6 +60,7 @@ class WhatsAppManager {
       lastMsg: WAMessage;
       texts: string[];
       timer: NodeJS.Timeout;
+      firstAt: number;
     }
   >();
   private inFlightProcessing = new Set<string>();
@@ -628,48 +655,105 @@ class WhatsAppManager {
 
   private queueInboundReply(body: string, contact: any, conversationId: string, msg: WAMessage): void {
     const key = contact.id;
+    const text = body.length > MAX_DEBOUNCE_CHARS ? body.slice(0, MAX_DEBOUNCE_CHARS) : body;
 
     // If an AI reply is currently being generated for this contact, queue it for follow-up
     if (this.inFlightProcessing.has(key)) {
       const existing = this.pendingFollowUps.get(key);
       if (existing) {
-        existing.texts.push(body);
+        existing.texts.push(text);
         existing.lastMsg = msg;
       } else {
         this.pendingFollowUps.set(key, {
           contact,
           conversationId,
           lastMsg: msg,
-          texts: [body]
+          texts: [text]
         });
       }
-      logger.info({ contactId: key, text: body }, 'Message queued for follow-up (AI in-flight)');
+      // Same bound as the debounce buffer: a peer typing through an in-flight reply must not grow
+      // this map without limit while the reply generation is stuck or slow. The map is per-peer
+      // and the in-flight set that gates it is itself bounded, so capping the key count here is
+      // enough: entries only exist for peers whose reply is still running.
+      if (existing && existing.texts.length > MAX_DEBOUNCE_TEXTS) {
+        existing.texts.splice(0, existing.texts.length - MAX_DEBOUNCE_TEXTS);
+      }
+      if (this.pendingFollowUps.size > MAX_DEBOUNCE_PEERS) {
+        const keys = this.pendingFollowUps.keys();
+        let dropped = 0;
+        for (let n = this.pendingFollowUps.size - MAX_DEBOUNCE_PEERS; n > 0; n--) {
+          const oldest = keys.next().value;
+          if (oldest === undefined) break;
+          this.pendingFollowUps.delete(oldest);
+          dropped += 1;
+        }
+        // Eviction means a buffered follow-up is not answered by the bot; surface it rather than
+        // losing it silently, since the customer is left without a reply.
+        if (dropped > 0) {
+          logger.warn({ dropped, queued: this.pendingFollowUps.size }, 'Follow-up queue cap reached, oldest dropped');
+        }
+      }
+      logger.info({ contactId: key, text }, 'Message queued for follow-up (AI in-flight)');
       return;
     }
 
-    // Debounce rapid bursts (e.g. user sends 2-3 short messages or typos within 2.5 seconds)
+    // Debounce rapid bursts (e.g. user sends 2-3 short messages or typos within 2.5 seconds).
+    // The delay is bounded: the flush deadline is measured from the FIRST buffered message, so a
+    // peer cannot push it forward indefinitely and silence its own conversation.
     const existing = this.debounceBuffers.get(key);
     if (existing) {
       clearTimeout(existing.timer);
-      existing.texts.push(body);
+      existing.texts.push(text);
       existing.lastMsg = msg;
+      if (existing.texts.length > MAX_DEBOUNCE_TEXTS) {
+        existing.texts.splice(0, existing.texts.length - MAX_DEBOUNCE_TEXTS);
+      }
+
+      const remaining = existing.firstAt + DEBOUNCE_HOLD_MS - Date.now();
+      if (remaining <= 0) {
+        this.processDebouncedBuffer(key); // deadline reached: flush now
+        return;
+      }
+
       existing.timer = setTimeout(() => {
         this.processDebouncedBuffer(key);
-      }, 2500);
-      logger.info({ contactId: key, bufferedCount: existing.texts.length }, 'Appended message to debounce buffer');
+      }, Math.min(DEBOUNCE_MS, remaining));
+      logger.info(
+        { contactId: key, bufferedCount: existing.texts.length, flushInMs: Math.min(DEBOUNCE_MS, remaining) },
+        'Appended message to debounce buffer'
+      );
       return;
     }
 
+    // Concurrency bound: the buffer is per peer, so cap the number of peers held at once and
+    // flush the oldest pending buffer instead of refusing the new one (no message is dropped).
+    if (this.debounceBuffers.size >= MAX_DEBOUNCE_PEERS) {
+      let oldestKey: string | null = null;
+      let oldestAt = Infinity;
+      for (const [k, v] of this.debounceBuffers) {
+        if (v.firstAt < oldestAt) {
+          oldestAt = v.firstAt;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) {
+        logger.warn({ contactId: oldestKey, peers: this.debounceBuffers.size }, 'Debounce peer cap reached, flushing oldest');
+        this.processDebouncedBuffer(oldestKey);
+      }
+    }
+
+    const firstAt = Date.now();
     const timer = setTimeout(() => {
       this.processDebouncedBuffer(key);
-    }, 2500);
+    }, DEBOUNCE_MS);
 
     this.debounceBuffers.set(key, {
       contact,
       conversationId,
       lastMsg: msg,
-      texts: [body],
-      timer
+      texts: [text],
+      timer,
+      firstAt
     });
   }
 
@@ -681,7 +765,9 @@ class WhatsAppManager {
     this.inFlightProcessing.add(key);
     try {
       // Merge buffered texts cleanly (e.g. "all new Honda bear" + "t" => "all new Honda bear \n t")
-      const combinedText = item.texts.filter(Boolean).join('\n').trim();
+      // Bounded: texts and chars are capped by queueInboundReply, and the merged prompt is capped
+      // again here so a burst can never become an unbounded LLM request.
+      const combinedText = item.texts.filter(Boolean).join('\n').trim().slice(0, MAX_DEBOUNCE_CHARS);
       await this.executeBotReply(combinedText, item.contact, item.conversationId, item.lastMsg);
     } catch (err) {
       logger.error({ err, contactId: key }, 'Error in processDebouncedBuffer');
@@ -1536,32 +1622,44 @@ class WhatsAppManager {
 
   public resolveLocalMediaPath(relOrAbsUrl?: string | null): string | null {
     if (!relOrAbsUrl) return null;
-    if (fs.existsSync(relOrAbsUrl)) return relOrAbsUrl;
 
     const filename = path.basename(relOrAbsUrl);
+    // Every candidate is derived from the uploads root, so no request value can escape it. The
+    // old list also probed the literal host path, process.cwd() and '../../', which let an
+    // admin-supplied string read arbitrary files (config, .env) and ship them to a WhatsApp peer.
     const candidates = [
       path.join(config.storage.uploadsDir, 'motorcycles', filename),
       path.join(config.storage.uploadsDir, filename),
       path.resolve(config.storage.baseDir, relOrAbsUrl.replace(/^\/storage\/?/, '')),
-      path.resolve('/root/bot-sales/storage/uploads/motorcycles', filename),
-      path.join(process.cwd(), relOrAbsUrl),
-      path.resolve(process.cwd(), '../../', relOrAbsUrl.replace(/^\//, ''))
+      path.resolve(config.storage.uploadsDir, relOrAbsUrl.replace(/^\/storage\/?/, ''))
     ];
 
     for (const cand of candidates) {
-      if (fs.existsSync(cand)) {
-        return cand;
+      const confined = confineMediaPath(cand);
+      if (confined && fs.existsSync(confined)) {
+        return confined;
       }
     }
     return null;
+  }
+
+  // WhatsApp may address a peer by phone number (@c.us) or by its privacy LID (@lid). The two are
+  // not interchangeable, so the shape test must come FIRST: isValidPhoneNumber() is permissive
+  // (/^[1-9][0-9]{8,14}$/) and happily matches a 14-15 digit LID, which is why the same value used
+  // to be a LID to syncLidContactsToPhone and a phone number to sendMessage.
+  // LIDs are 14-16 digits, so prefix tests for 260/479 are subsumed by the length rule; keeping
+  // only the length rule avoids misreading a real shorter +260 number as a LID.
+  public isLikelyLid(value: string): boolean {
+    const v = value.trim();
+    if (!v || v.includes('@')) return false;
+    return /^\d{14,16}$/.test(v);
   }
 
   public normalizeChatJid(toPhoneOrJid: string): string {
     let chatId = toPhoneOrJid.trim();
     if (chatId.includes('@')) return chatId;
 
-    // If it looks like a WhatsApp LID (14-16 digits, or starts with 479/260) and is not a valid phone number
-    if (!isValidPhoneNumber(chatId) && (/^\d{14,16}$/.test(chatId) || chatId.startsWith('260') || chatId.startsWith('479'))) {
+    if (this.isLikelyLid(chatId)) {
       return `${chatId}@lid`;
     }
 
@@ -1587,11 +1685,18 @@ class WhatsAppManager {
       throw new Error('Tidak dapat mengirim pesan ke Saluran WhatsApp (Channel bersifat siaran satu arah).');
     }
 
+    // Media confinement (Batch 3): an admin-supplied mediaPath/mediaUrl may only ever select a
+    // file physically inside storage/uploads. Anything else (absolute host paths, '../' escapes,
+    // repo files) is dropped instead of being read and egressed to a WhatsApp peer.
+    const boundMediaPath = confineMediaPath(
+      options?.mediaPath ?? (options?.mediaUrl ? this.resolveLocalMediaPath(options.mediaUrl) : null)
+    );
+    if (options?.mediaUrl && !boundMediaPath) {
+      logger.warn({ mediaUrl: options.mediaUrl }, 'media path outside uploads root rejected');
+    }
+
     const trySend = async (targetJid: string): Promise<WAMessage | null> => {
-      let mediaPath = options?.mediaPath;
-      if (!mediaPath && options?.mediaUrl) {
-        mediaPath = this.resolveLocalMediaPath(options.mediaUrl);
-      }
+      const mediaPath = boundMediaPath;
 
       if (mediaPath && fs.existsSync(mediaPath)) {
         try {

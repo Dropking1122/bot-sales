@@ -3,7 +3,7 @@ import { AdminRole } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
-import { sendWhatsAppTextMessage } from '../whatsapp/whatsapp.service';
+import { sendWhatsAppTextMessage, waManager } from '../whatsapp/whatsapp.service';
 import { logger } from '../../config/logger';
 
 // SALES scope: a rep may only read or act on its own conversations plus the shared unassigned queue
@@ -129,11 +129,15 @@ export async function sendManualReply(req: Request, res: Response, next: NextFun
     const lidMatch = conv.contact.internalNotes?.match(/\[LID:\s*([^\]]+)\]/);
     const lidJid = lidMatch ? lidMatch[1].trim() : null;
 
+    // Prefer the recorded LID; fall back to the stored value verbatim (a LID must not be forced
+    // into '@c.us' — that is exactly the divergence normalizeChatJid now avoids).
     const recipient =
       lidJid ||
       (conv.contact.phone && conv.contact.phone.includes('@')
         ? conv.contact.phone
-        : `${conv.contact.phoneNormalized}@c.us`);
+        : waManager.isLikelyLid(conv.contact.phoneNormalized || '')
+          ? `${conv.contact.phoneNormalized}@lid`
+          : `${conv.contact.phoneNormalized}@c.us`);
 
     // Try to send via WhatsApp Web if connected
     let waMessageId: string | undefined;

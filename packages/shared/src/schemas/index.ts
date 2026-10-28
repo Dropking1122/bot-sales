@@ -114,8 +114,10 @@ export const BroadcastCampaignSchema = z.object({
     tags: z.array(z.string()).optional(),
     interestedMotorcycle: z.string().optional(),
     sources: z.array(z.string()).optional(),
-    onlyConsented: z.boolean().default(true)
-  }).default({ onlyConsented: true })
+    // Deprecated and ignored: consent is enforced as an invariant by the API, not as an opt-in
+    // filter. Still accepted so an old client that sends it keeps working.
+    onlyConsented: z.boolean().optional()
+  }).default({})
 });
 
 export const FinancingSimulationSchema = z.object({
