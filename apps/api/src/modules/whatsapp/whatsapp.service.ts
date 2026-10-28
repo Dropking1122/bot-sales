@@ -6,6 +6,7 @@ import { config } from '../../config/env';
 import { logger } from '../../config/logger';
 import { prisma } from '../../config/db';
 import { normalizePhoneNumber, formatRupiah, WhatsAppStatus, isValidPhoneNumber } from '@bot-sales/shared';
+import { logAudit } from '../../utils/audit';
 import {
   calculateFinancing,
   calculateMultiTenors,
@@ -31,6 +32,30 @@ export const DEBOUNCE_HOLD_MS = 15000;
 export const MAX_DEBOUNCE_TEXTS = 20;
 export const MAX_DEBOUNCE_CHARS = 4000;
 export const MAX_DEBOUNCE_PEERS = 500;
+
+/**
+ * Handoff trigger (Batch 4). Matching was a bare substring test, so 'ini 1 pcs' (contains 'cs') and
+ * 'administrasi' (contains 'admin') summoned every admin's phone. Word boundaries with an optional
+ * Indonesian possessive keep the real requests ('mau sales', 'salesnya mana') while dropping the
+ * accidental ones.
+ */
+export const HANDOFF_TRIGGER_RE = /\b(sales|admin|cs|manusia|operator)(nya|ku)?\b/;
+
+/**
+ * Customer-authored text is interpolated into an alert that the dealer's own WhatsApp account sends
+ * to admin personal numbers - a channel operators already trust. Neutralise the constructs a sender
+ * could use to imitate that template or plant a link: WhatsApp markup, line breaks, control chars
+ * and URLs. Returns a single flat line.
+ */
+export function sanitizeAlertText(raw: string, maxLen = 300): string {
+  const flat = String(raw ?? '')
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/https?:\/\/\S+/gi, '[tautan dihapus]')
+    .replace(/[*_~`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return flat.length > maxLen ? `${flat.slice(0, maxLen)}...` : flat;
+}
 
 /**
  * Media confinement (Batch 3): an admin-supplied mediaPath/mediaUrl may only ever select a file
@@ -786,6 +811,19 @@ class WhatsAppManager {
   }
 
   private async executeBotReply(body: string, contact: any, conversationId: string, msg: WAMessage): Promise<void> {
+    // Read the handoff state fresh from the DB instead of trusting whatever the caller saw. Between
+    // the original read and this point sit the 2500 ms debounce window and the LLM call, and the
+    // HANDOFF branch below is not idempotent: it fans an alert out to every admin's personal phone.
+    // A second pass re-entered through the pendingFollowUps queue used to re-fan the same alert.
+    const live = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { isBotActive: true, status: true }
+    });
+    if (!live || !live.isBotActive || live.status === 'HANDOFF') {
+      logger.info({ conversationId }, 'Bot reply skipped: conversation is under human control');
+      return;
+    }
+
     const botResponse = await this.resolveBotResponse(body, contact);
     if (!botResponse) return;
 
@@ -887,10 +925,13 @@ class WhatsAppManager {
       return 'Nomor Anda telah berhasil dikecualikan (opt-out) dari pesan siaran promosi kami. Terima kasih!';
     }
 
-    // 2. Sales handoff request
-    if (lower.includes('sales') || lower.includes('admin') || lower.includes('cs') || lower.includes('manusia')) {
-      await prisma.conversation.updateMany({
-        where: { contactId: contact.id },
+    // 2. Sales handoff request (word-boundary match, see HANDOFF_TRIGGER_RE)
+    if (HANDOFF_TRIGGER_RE.test(lower)) {
+      // Only the ACTIVE -> HANDOFF transition is allowed to notify. Claiming the transition first
+      // (instead of unconditionally updateMany) makes the fan-out below at-most-once per handoff:
+      // a second trigger for an already-handed-off thread changes 0 rows and stays silent.
+      const claimed = await prisma.conversation.updateMany({
+        where: { contactId: contact.id, status: { not: 'HANDOFF' } },
         data: { isBotActive: false, status: 'HANDOFF' }
       });
 
@@ -924,38 +965,48 @@ class WhatsAppManager {
         });
       }
 
-      // 🔔 Multi-Admin Notification: Broadcast alert to all active sales & admins with registered WA phone
-      try {
-        const availableAdmins = await prisma.admin.findMany({
-          where: {
-            isActive: true,
-            phone: { not: null }
-          },
-          select: { id: true, name: true, phone: true, isAvailable: true }
-        });
+      // Notification goes out only for the transition that actually claimed the handoff.
+      if (claimed.count > 0) {
+        try {
+          const availableAdmins = await prisma.admin.findMany({
+            where: {
+              isActive: true,
+              phone: { not: null }
+            },
+            select: { id: true, name: true, phone: true, isAvailable: true }
+          });
 
-        const activeSalesList = availableAdmins.filter(a => a.phone && a.phone.trim().length >= 8);
-        if (activeSalesList.length > 0) {
-          const clientName = contact.name || contact.phoneNormalized || 'Pelanggan';
-          const alertSalesMsg =
-            `🔔 *PANGGILAN SALES DARI PELANGGAN!*\n\n` +
-            `Pelanggan: *${clientName}*\n` +
-            `Nomor WA: ${contact.phoneNormalized || contact.phone || '-'}\n` +
-            `Pesan Klien: _"${text}"_\n\n` +
-            `📍 Buka & balas melalui DMS Admin:\nhttps://m.revd.dev/inbox\n\n` +
-            `_(Jika Anda berhalangan/sibuk, Anda bisa mengalihkan obrolan ini ke rekan sales lain langsung dari menu Inbox)_`;
+          const activeSalesList = availableAdmins.filter(a => a.phone && a.phone.trim().length >= 8);
+          if (activeSalesList.length > 0) {
+            const clientName = sanitizeAlertText(contact.name || contact.phoneNormalized || 'Pelanggan', 80);
+            const clientPhone = sanitizeAlertText(contact.phoneNormalized || contact.phone || '-', 24);
+            const clientMessage = sanitizeAlertText(text, 300);
+            const alertSalesMsg =
+              `🔔 *PANGGILAN SALES DARI PELANGGAN!*\n\n` +
+              `Pelanggan: *${clientName}*\n` +
+              `Nomor WA: ${clientPhone}\n` +
+              `Pesan Klien: _"${clientMessage}"_\n\n` +
+              `📍 Buka & balas melalui DMS Admin:\nhttps://m.revd.dev/inbox\n\n` +
+              `_(Jika Anda berhalangan/sibuk, Anda bisa mengalihkan obrolan ini ke rekan sales lain langsung dari menu Inbox)_`;
 
-          for (const adm of activeSalesList) {
-            const cleanPhone = (adm.phone || '').replace(/[^0-9]/g, '');
-            if (cleanPhone.length >= 8) {
-              sendWhatsAppTextMessage(`${cleanPhone}@c.us`, alertSalesMsg).catch((err) => {
-                logger.warn({ err: err?.message, admin: adm.name }, 'Failed to send sales alert to admin WA');
-              });
+            for (const adm of activeSalesList) {
+              const cleanPhone = (adm.phone || '').replace(/[^0-9]/g, '');
+              if (cleanPhone.length >= 8) {
+                sendWhatsAppTextMessage(`${cleanPhone}@c.us`, alertSalesMsg).catch((err) => {
+                  logger.warn({ err: err?.message, admin: adm.name }, 'Failed to send sales alert to admin WA');
+                });
+              }
             }
+
+            // A handoff alert is a security-relevant event and previously left no trace at all.
+            logAudit(null, 'HANDOFF_NOTIFIED', 'Contact', contact.id, {
+              deliveredTo: activeSalesList.length,
+              contactPhone: clientPhone
+            }).catch(() => undefined);
           }
+        } catch (alertErr) {
+          logger.warn({ alertErr }, 'Error triggering multi-admin sales notification');
         }
-      } catch (alertErr) {
-        logger.warn({ alertErr }, 'Error triggering multi-admin sales notification');
       }
 
       return 'Baik, percakapan ini sedang dialihkan ke tim sales kami. Sales konsultan kami akan segera menghubungi Anda langsung. Mohon ditunggu ya! 🙏';
