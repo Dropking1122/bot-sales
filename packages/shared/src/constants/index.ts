@@ -60,6 +60,22 @@ export function isLikelyLid(value: string | null | undefined): boolean {
 }
 
 /**
+ * A notification counts as read once it is older than the admin's read watermark (the newest
+ * timestamp the admin has acknowledged). Single definition: the API derives the served `read` flag
+ * from this and the test suite exercises the same function, so the two cannot drift.
+ */
+export function isNotificationRead(
+  createdAt: Date | string,
+  readAt: Date | string | null | undefined
+): boolean {
+  if (!readAt) return false;
+  const created = new Date(createdAt).getTime();
+  const watermark = new Date(readAt).getTime();
+  if (Number.isNaN(created) || Number.isNaN(watermark)) return false;
+  return created <= watermark;
+}
+
+/**
  * Formula injection protection for CSV / Excel cells
  * Prepends a single quote if string starts with dangerous characters =, +, -, @, \t, \r
  */

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AdminRole } from '@prisma/client';
+import { isNotificationRead } from '@bot-sales/shared';
 import { prisma } from '../../config/db';
 import { waManager } from '../whatsapp/whatsapp.service';
 import { redis } from '../../config/redis';
@@ -9,6 +10,10 @@ import { redis } from '../../config/redis';
 function isAuditReader(req: Request) {
   return req.user?.role === AdminRole.SUPER_ADMIN || req.user?.role === AdminRole.ADMIN;
 }
+
+// Fallback clock for a WhatsApp alert when no session row exists yet. Must be stable across polls,
+// so it is captured once per process rather than per request.
+const PROCESS_STARTED_AT = new Date();
 
 export async function getDashboardSummary(req: Request, res: Response, next: NextFunction) {
   try {
@@ -93,7 +98,7 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [notifMessages, recentContacts, activeCampaigns, securityAndErrorLogs] = await Promise.all([
+    const [notifMessages, recentContacts, activeCampaigns, securityAndErrorLogs, readState, waSession] = await Promise.all([
       prisma.message.findMany({
         take: 20,
         where: {
@@ -130,8 +135,18 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
             },
             orderBy: { createdAt: 'desc' }
           })
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      prisma.admin.findUnique({
+        where: { id: req.user!.id },
+        select: { notificationsReadAt: true }
+      }),
+      prisma.whatsAppSession.findUnique({ where: { sessionName: 'default' } })
     ]);
+
+    // A notification is "read" when it is older than the admin's read watermark. The watermark only
+    // ever moves forward, so clicking an old item cannot resurrect newer unread ones.
+    const readAt = readState?.notificationsReadAt ?? null;
+    const isRead = (createdAt: Date | string) => isNotificationRead(createdAt, readAt);
 
     const notifications: Array<{
       id: string;
@@ -146,6 +161,9 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
     // 0. Alert jika koneksi WhatsApp terputus atau QR expired
     const currentWa = waManager.getStatus();
     if (currentWa.status === 'DISCONNECTED' || currentWa.status === 'QR_READY') {
+      // Time comes from the DB row, not from `new Date()`: a per-request timestamp made this item
+      // look freshly created on every poll, so it could never age past the read watermark.
+      const alertTime = waSession?.updatedAt ?? PROCESS_STARTED_AT;
       notifications.push({
         id: 'wa-disconnected-alert',
         title: '⚠️ WhatsApp Terputus!',
@@ -153,9 +171,9 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
           ? 'Sesi WhatsApp memerlukan scan QR ulang untuk menghubungkan bot.'
           : 'Koneksi WhatsApp terputus. Klik untuk membuka pengaturan dan menghubungkan kembali.',
         type: 'system',
-        time: new Date().toISOString(),
+        time: alertTime.toISOString(),
         link: '/settings',
-        read: false
+        read: isRead(alertTime)
       });
     }
 
@@ -181,7 +199,7 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
           type: isNewClient ? 'lead' : 'message',
           time: msg.createdAt.toISOString(),
           link: '/inbox',
-          read: !isUnread
+          read: !isUnread || isRead(msg.createdAt)
         });
       }
     });
@@ -196,7 +214,7 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
           type: 'lead',
           time: c.createdAt.toISOString(),
           link: '/inbox',
-          read: false
+          read: isRead(c.createdAt)
         });
       }
     });
@@ -214,7 +232,7 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
           type: 'system',
           time: log.createdAt.toISOString(),
           link: '/audit-logs?entity=SECURITY_ALERT',
-          read: false
+          read: isRead(log.createdAt)
         });
       } else {
         notifications.push({
@@ -224,7 +242,7 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
           type: 'system',
           time: log.createdAt.toISOString(),
           link: '/audit-logs?entity=SYSTEM_ERROR',
-          read: false
+          read: isRead(log.createdAt)
         });
       }
     });
@@ -242,7 +260,8 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
       });
     });
 
-    // Fallback system notification if empty
+    // Fallback system notification if empty. Informational only, never an alert, so it must not
+    // inflate the badge: a per-request timestamp would also make it look new on every poll.
     if (notifications.length === 0) {
       notifications.push({
         id: 'sys-online',
@@ -251,7 +270,7 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
         type: 'system',
         time: new Date().toISOString(),
         link: '/settings',
-        read: false
+        read: true
       });
     }
 
@@ -266,6 +285,42 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
         notifications
       }
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Marks notifications as read by advancing the admin's read watermark.
+ * The client sends the newest notification time it has seen; the stored watermark only moves
+ * forward, so a later poll can never mark a newer notification read by accident.
+ */
+export async function markNotificationsRead(req: Request, res: Response, next: NextFunction) {
+  try {
+    const raw = (req.body || {}).until;
+    const until = raw ? new Date(raw) : new Date();
+
+    if (raw && Number.isNaN(until.getTime())) {
+      return res.status(400).json({ success: false, message: 'Nilai waktu tidak valid.' });
+    }
+
+    // Never move the watermark backwards, and never into the future.
+    const now = new Date();
+    const target = until > now ? now : until;
+
+    const current = await prisma.admin.findUnique({
+      where: { id: req.user!.id },
+      select: { notificationsReadAt: true }
+    });
+
+    if (!current?.notificationsReadAt || current.notificationsReadAt < target) {
+      await prisma.admin.update({
+        where: { id: req.user!.id },
+        data: { notificationsReadAt: target }
+      });
+    }
+
+    return res.json({ success: true, data: { readAt: target.toISOString() } });
   } catch (err) {
     next(err);
   }

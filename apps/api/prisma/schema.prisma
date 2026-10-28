@@ -89,6 +89,7 @@ model Admin {
   role         AdminRole   @default(ADMIN)
   isActive     Boolean     @default(true)
   isAvailable  Boolean     @default(true)
+  notificationsReadAt DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 

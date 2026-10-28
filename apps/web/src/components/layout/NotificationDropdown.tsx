@@ -162,19 +162,41 @@ export const NotificationDropdown: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  const markAllAsRead = () => {
+  // Both handlers persist through the API: the list is re-fetched from the server every 10s, so a
+  // local-only update would be overwritten on the next poll and the badge would snap back.
+  const markAllAsRead = async () => {
+    // Optimistic update so the badge clears immediately, then confirm with the server.
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
+    try {
+      await apiRequest('/dashboard/notifications/read', {
+        method: 'PATCH',
+        body: JSON.stringify({ until: new Date().toISOString() })
+      });
+    } catch {
+      // Silent fallback; the next poll restores the true state.
+    }
+    fetchNotifications();
   };
 
-  const handleNotificationClick = (item: NotificationItem) => {
-    // Mark this one as read
+  const handleNotificationClick = async (item: NotificationItem) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, read: true } : n))
     );
     setUnreadCount((prev) => Math.max(0, prev - (item.read ? 0 : 1)));
     setIsOpen(false);
     navigate(item.link);
+
+    // The watermark is a point in time, so this also covers everything older than the clicked item.
+    try {
+      await apiRequest('/dashboard/notifications/read', {
+        method: 'PATCH',
+        body: JSON.stringify({ until: item.time })
+      });
+    } catch {
+      // Silent fallback; the next poll restores the true state.
+    }
+    fetchNotifications();
   };
 
   const formatRelativeTime = (timeStr: string) => {
