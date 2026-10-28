@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { AdminRole } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { config } from '../../config/env';
 import { AppError } from '../../middleware/errorHandler';
@@ -621,15 +622,33 @@ export async function getImportJob(req: Request, res: Response, next: NextFuncti
       throw new AppError('Import job tidak ditemukan', 404);
     }
 
+    // Import jobs stay readable only to a SUPER_ADMIN/ADMIN or the account that ran the import.
+    // Re-checking here (not only in the route) keeps the gate on every future caller of this handler.
+    if (req.user?.role === AdminRole.SALES && job.createdById !== req.user?.id) {
+      throw new AppError('Import job tidak ditemukan', 404);
+    }
+
     return res.json({ success: true, data: job });
   } catch (err) {
     next(err);
   }
 }
 
+// Shared by the two job-scoped readers below: they resolve a job id straight to rows, so a caller
+// that only holds a token could otherwise read another principal's rawData with no ownership check.
+async function assertJobAccess(req: Request, jobId: string) {
+  const job = await prisma.importJob.findUnique({ where: { id: jobId }, select: { createdById: true } });
+
+  if (!job || (req.user?.role === AdminRole.SALES && job.createdById !== req.user?.id)) {
+    throw new AppError('Import job tidak ditemukan', 404);
+  }
+}
+
 export async function getImportJobErrors(req: Request, res: Response, next: NextFunction) {
   try {
     const { jobId } = req.params;
+    await assertJobAccess(req, jobId);
+
     const errors = await prisma.importJobError.findMany({
       where: { importJobId: jobId },
       orderBy: { rowNumber: 'asc' },
@@ -645,6 +664,8 @@ export async function getImportJobErrors(req: Request, res: Response, next: Next
 export async function exportImportErrorsExcel(req: Request, res: Response, next: NextFunction) {
   try {
     const { jobId } = req.params;
+    await assertJobAccess(req, jobId);
+
     const errors = await prisma.importJobError.findMany({
       where: { importJobId: jobId },
       orderBy: { rowNumber: 'asc' }

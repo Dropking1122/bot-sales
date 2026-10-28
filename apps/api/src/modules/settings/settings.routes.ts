@@ -10,7 +10,8 @@ const router = Router();
 router.get('/public', getPublicSettings);
 
 // Protected settings routes
-router.get('/', authenticate, getSettings);
+// Full settings keyspace is dealer/AI configuration: SUPER_ADMIN/ADMIN only.
+router.get('/', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), getSettings);
 router.patch('/', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), updateSettings);
 router.post('/logo', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), uploadImage.single('logo'), uploadLogo);
 router.post('/test-ai', authenticate, requireRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), testAiEndpoint);

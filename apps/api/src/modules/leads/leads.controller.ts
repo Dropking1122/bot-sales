@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { AdminRole } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from '@bot-sales/shared';
 import { AppError } from '../../middleware/errorHandler';
@@ -14,7 +15,12 @@ export async function listLeads(req: Request, res: Response, next: NextFunction)
     const where: any = {};
 
     if (status) where.status = String(status);
-    if (salesId) where.assignedSalesId = String(salesId);
+    if (req.user?.role === AdminRole.SALES) {
+      // SALES sees only its own pipeline; without this any authenticated account reads every rep's leads.
+      where.assignedSalesId = req.user?.id;
+    } else if (salesId) {
+      where.assignedSalesId = String(salesId);
+    }
     if (search) {
       where.OR = [
         { customerName: { contains: String(search), mode: 'insensitive' } },
@@ -60,6 +66,10 @@ export async function createLead(req: Request, res: Response, next: NextFunction
       throw new AppError('contactId, customerName, dan phone wajib diisi', 400);
     }
 
+    // A SALES rep owns whatever it creates; only admins may assign a lead to someone else.
+    const ownerId =
+      req.user?.role === AdminRole.SALES ? req.user?.id ?? null : assignedSalesId || req.user?.id || null;
+
     const lead = await prisma.lead.create({
       data: {
         contactId,
@@ -70,7 +80,7 @@ export async function createLead(req: Request, res: Response, next: NextFunction
         dpPlanned: dpPlanned ? parseFloat(dpPlanned) : null,
         tenorPlanned: tenorPlanned ? parseInt(tenorPlanned, 10) : null,
         status: status || 'BARU',
-        assignedSalesId: assignedSalesId || req.user?.id || null,
+        assignedSalesId: ownerId,
         notes: notes || null,
         followUpDate: followUpDate ? new Date(followUpDate) : null
       },
@@ -98,11 +108,17 @@ export async function updateLead(req: Request, res: Response, next: NextFunction
       throw new AppError('Lead tidak ditemukan', 404);
     }
 
+    // SALES may only touch its own pipeline and may not hand a lead to another rep.
+    const isSales = req.user?.role === AdminRole.SALES;
+    if (isSales && existing.assignedSalesId !== req.user?.id) {
+      throw new AppError('Lead tidak ditemukan', 404);
+    }
+
     const updated = await prisma.lead.update({
       where: { id },
       data: {
         status: status !== undefined ? status : undefined,
-        assignedSalesId: assignedSalesId !== undefined ? assignedSalesId : undefined,
+        assignedSalesId: isSales ? undefined : assignedSalesId !== undefined ? assignedSalesId : undefined,
         motorcycleId: motorcycleId !== undefined ? motorcycleId : undefined,
         notes: notes !== undefined ? notes : undefined,
         budget: budget !== undefined ? (budget ? parseFloat(budget) : null) : undefined,

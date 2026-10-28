@@ -1,9 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
+import { AdminRole } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { waManager } from '../whatsapp/whatsapp.service';
 import { redis } from '../../config/redis';
 
-export async function getDashboardSummary(_req: Request, res: Response, next: NextFunction) {
+// Audit and diagnostic rows are gated to the audit-log roles elsewhere (`/audit-logs`), so the
+// dashboard must not re-expose them to SALES. Counters stay visible for everyone.
+function isAuditReader(req: Request) {
+  return req.user?.role === AdminRole.SUPER_ADMIN || req.user?.role === AdminRole.ADMIN;
+}
+
+export async function getDashboardSummary(req: Request, res: Response, next: NextFunction) {
   try {
     const [
       activeMotorcycles,
@@ -26,11 +33,13 @@ export async function getDashboardSummary(_req: Request, res: Response, next: Ne
       prisma.conversation.count(),
       prisma.broadcastCampaign.count({ where: { status: 'RUNNING' } }),
       prisma.broadcastCampaign.count({ where: { status: 'COMPLETED' } }),
-      prisma.auditLog.findMany({
-        take: 10,
-        orderBy: { createdAt: 'desc' },
-        include: { admin: { select: { name: true, email: true } } }
-      })
+      isAuditReader(req)
+        ? prisma.auditLog.findMany({
+            take: 10,
+            orderBy: { createdAt: 'desc' },
+            include: { admin: { select: { name: true, email: true } } }
+          })
+        : Promise.resolve([])
     ]);
 
     // Message counts
@@ -79,7 +88,7 @@ export async function getDashboardSummary(_req: Request, res: Response, next: Ne
   }
 }
 
-export async function getNotifications(_req: Request, res: Response, next: NextFunction) {
+export async function getNotifications(req: Request, res: Response, next: NextFunction) {
   try {
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -112,14 +121,16 @@ export async function getNotifications(_req: Request, res: Response, next: NextF
         take: 3,
         orderBy: { createdAt: 'desc' }
       }),
-      prisma.auditLog.findMany({
-        take: 10,
-        where: {
-          entity: { in: ['SECURITY_ALERT', 'SYSTEM_ERROR'] },
-          createdAt: { gte: sevenDaysAgo }
-        },
-        orderBy: { createdAt: 'desc' }
-      })
+      isAuditReader(req)
+        ? prisma.auditLog.findMany({
+            take: 10,
+            where: {
+              entity: { in: ['SECURITY_ALERT', 'SYSTEM_ERROR'] },
+              createdAt: { gte: sevenDaysAgo }
+            },
+            orderBy: { createdAt: 'desc' }
+          })
+        : Promise.resolve([])
     ]);
 
     const notifications: Array<{

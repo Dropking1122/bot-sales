@@ -1,14 +1,39 @@
 import { Request, Response, NextFunction } from 'express';
+import { AdminRole } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { AppError } from '../../middleware/errorHandler';
 import { logAudit } from '../../utils/audit';
 import { sendWhatsAppTextMessage } from '../whatsapp/whatsapp.service';
 import { logger } from '../../config/logger';
 
+// SALES scope: a rep may only read or act on its own conversations plus the shared unassigned queue
+// (that queue is the point of the inbox). Admins are unrestricted.
+// ponytail: owner scope, not per-rep hiding of the unassigned queue — add a per-rep queue flag if
+// reps ever must not see each other's fresh customers.
+function salesScope(req: Request) {
+  return req.user?.role === AdminRole.SALES
+    ? { OR: [{ assignedToAdminId: req.user?.id }, { assignedToAdminId: null }] }
+    : {};
+}
+
+// Every conversation-id handler passes through here; without it any token holder can act on any chat.
+async function assertConversationAccess(req: Request, id: string) {
+  if (req.user?.role !== AdminRole.SALES) return;
+
+  const row = await prisma.conversation.findUnique({
+    where: { id },
+    select: { assignedToAdminId: true }
+  });
+
+  if (!row || (row.assignedToAdminId && row.assignedToAdminId !== req.user?.id)) {
+    throw new AppError('Percakapan tidak ditemukan', 404);
+  }
+}
+
 export async function listConversations(req: Request, res: Response, next: NextFunction) {
   try {
     const { status, search, assignedTo } = req.query;
-    const where: any = {};
+    const where: any = { ...salesScope(req) };
 
     if (status) where.status = String(status);
     if (assignedTo) where.assignedToAdminId = String(assignedTo);
@@ -44,6 +69,7 @@ export async function listConversations(req: Request, res: Response, next: NextF
 export async function getConversationMessages(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
+    await assertConversationAccess(req, id);
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
@@ -81,6 +107,7 @@ export async function sendManualReply(req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
     const { message } = req.body;
+    await assertConversationAccess(req, id);
 
     if (!message || !message.trim()) {
       throw new AppError('Pesan tidak boleh kosong', 400);
@@ -149,6 +176,7 @@ export async function sendManualReply(req: Request, res: Response, next: NextFun
 export async function takeoverBot(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
+    await assertConversationAccess(req, id);
 
     const conv = await prisma.conversation.update({
       where: { id },
@@ -170,6 +198,7 @@ export async function takeoverBot(req: Request, res: Response, next: NextFunctio
 export async function resumeBot(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
+    await assertConversationAccess(req, id);
 
     const conv = await prisma.conversation.update({
       where: { id },
@@ -191,6 +220,7 @@ export async function transferConversation(req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const { targetAdminId, reason } = req.body;
+    await assertConversationAccess(req, id);
 
     if (!targetAdminId) {
       throw new AppError('Admin / Sales tujuan wajib dipilih', 400);
@@ -269,6 +299,7 @@ export async function transferConversation(req: Request, res: Response, next: Ne
 export async function deleteConversation(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
+    await assertConversationAccess(req, id);
 
     await prisma.message.deleteMany({
       where: { conversationId: id }
